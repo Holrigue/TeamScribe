@@ -182,6 +182,11 @@ class SettingsDialog(QDialog):
         buttons_row.addWidget(cancel_btn)
         layout.addLayout(buttons_row)
 
+        kofi_label = QLabel('<a href="https://ko-fi.com/gabrielhoule">☕ Soutenir TeamScribe sur Ko-fi</a>')
+        kofi_label.setOpenExternalLinks(True)
+        kofi_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(kofi_label)
+
     def _update_glass_label(self, value: int) -> None:
         self.glass_label.setText(f"Effet verre liquide (transparence) : {value}%")
 

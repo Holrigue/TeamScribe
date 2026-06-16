@@ -1,5 +1,7 @@
 # TeamScribe
 
+[![ko-fi](https://img.shields.io/badge/Support%20me%20on-Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/gabrielhoule)
+
 A Windows 11 command-line tool that automates a 3-stage pipeline for your
 Microsoft Teams meetings:
 
