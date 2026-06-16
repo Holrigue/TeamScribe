@@ -22,7 +22,7 @@ import webbrowser
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPoint, Qt, QThread, Signal
-from PySide6.QtGui import QGuiApplication, QKeyEvent, QMouseEvent
+from PySide6.QtGui import QGuiApplication, QIcon, QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -238,6 +238,9 @@ class TeamScribeWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("TeamScribe")
+        logo_path = config.ROOT / "assets" / "logo.ico"
+        if logo_path.is_file():
+            self.setWindowIcon(QIcon(str(logo_path)))
         self.setWindowFlags(
             Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
         )

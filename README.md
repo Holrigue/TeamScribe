@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.png" alt="TeamScribe logo" width="160"></p>
+
 # TeamScribe
 
 [![ko-fi](https://img.shields.io/badge/Support%20me%20on-Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/gabrielhoule)

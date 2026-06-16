@@ -14,6 +14,7 @@ from pathlib import Path
 from . import config
 
 SHORTCUT_NAME = "TeamScribe.lnk"
+ICON_PATH = Path(__file__).resolve().parent.parent / "assets" / "logo.ico"
 
 
 def _python_target() -> Path:
@@ -46,6 +47,7 @@ def _desktop_folder() -> Path:
 
 def _write_shortcut(shortcut_path: Path) -> None:
     target = _python_target()
+    icon_line = f"$s.IconLocation = '{ICON_PATH}'; " if ICON_PATH.is_file() else ""
     script = (
         "$ws = New-Object -ComObject WScript.Shell; "
         f"$s = $ws.CreateShortcut('{shortcut_path}'); "
@@ -53,6 +55,7 @@ def _write_shortcut(shortcut_path: Path) -> None:
         "$s.Arguments = '-m teamscribe.cli gui'; "
         f"$s.WorkingDirectory = '{config.ROOT}'; "
         "$s.Description = 'TeamScribe - capture et resume de reunions'; "
+        f"{icon_line}"
         "$s.Save()"
     )
     subprocess.run(
