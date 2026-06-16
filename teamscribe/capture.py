@@ -159,6 +159,96 @@ def _write_wav(path: Path, mono16k: np.ndarray) -> None:
         wf.writeframes(pcm16.tobytes())
 
 
+def _pyaudio():
+    try:
+        import pyaudiowpatch as pyaudio
+    except ImportError as exc:  # pragma: no cover - platform dependent
+        raise RuntimeError(
+            "PyAudioWPatch is required and is Windows-only. "
+            "Install it with `pip install --user PyAudioWPatch`."
+        ) from exc
+    return pyaudio
+
+
+def _rms(x: np.ndarray) -> float:
+    if x.size == 0:
+        return 0.0
+    return float(np.sqrt(np.mean(np.square(x, dtype=np.float64))))
+
+
+def list_devices() -> dict:
+    """Return the default speakers (loopback), default mic, and all loopbacks.
+
+    Used by `teamscribe devices` — opens no streams, just queries the host API.
+    """
+    pyaudio = _pyaudio()
+    p = pyaudio.PyAudio()
+    try:
+        wasapi = p.get_host_api_info_by_type(pyaudio.paWASAPI)
+        speakers = p.get_device_info_by_index(wasapi["defaultOutputDevice"])
+        mic = p.get_default_input_device_info()
+        loopbacks = [
+            {"name": d["name"], "index": d["index"], "rate": int(d["defaultSampleRate"])}
+            for d in p.get_loopback_device_info_generator()
+        ]
+        return {
+            "default_speakers": {
+                "name": speakers["name"],
+                "rate": int(speakers["defaultSampleRate"]),
+            },
+            "default_mic": {
+                "name": mic["name"],
+                "rate": int(mic["defaultSampleRate"]),
+            },
+            "loopback_devices": loopbacks,
+        }
+    finally:
+        p.terminate()
+
+
+def probe(seconds: float = 6.0) -> dict:
+    """Record the loopback and mic SEPARATELY for ``seconds`` and report levels.
+
+    Returns per-stream RMS/peak so each source can be confirmed independently
+    (a single mixed file can't prove both contributed). Used by
+    `teamscribe selftest`.
+    """
+    pyaudio = _pyaudio()
+    p = pyaudio.PyAudio()
+    recorders: list[_StreamRecorder] = []
+    try:
+        loop_stream, loop_rate, loop_ch, speaker_name = _open_loopback(p, pyaudio)
+        recorders.append(_StreamRecorder("loopback", loop_stream, loop_rate, loop_ch, 2))
+        mic_stream, mic_rate, mic_ch, mic_name = _open_microphone(p, pyaudio)
+        recorders.append(_StreamRecorder("microphone", mic_stream, mic_rate, mic_ch, 2))
+
+        for r in recorders:
+            r.start()
+        time.sleep(seconds)
+    finally:
+        for r in recorders:
+            r.stop()
+        p.terminate()
+
+    loopback = recorders[0].to_mono_16k()
+    mic = recorders[1].to_mono_16k()
+    return {
+        "seconds": seconds,
+        "loopback": {
+            "name": speaker_name,
+            "rms": _rms(loopback),
+            "peak": float(np.max(np.abs(loopback))) if loopback.size else 0.0,
+            "samples": int(loopback.size),
+        },
+        "microphone": {
+            "name": mic_name,
+            "rms": _rms(mic),
+            "peak": float(np.max(np.abs(mic))) if mic.size else 0.0,
+            "samples": int(mic.size),
+        },
+    }
+
+
 def record(out_path: Path, max_minutes: float, on_tick=None) -> Path:
     """Capture loopback + mic until Ctrl+C or ``max_minutes``.
 
@@ -170,13 +260,7 @@ def record(out_path: Path, max_minutes: float, on_tick=None) -> Path:
 
     Returns the written WAV path.
     """
-    try:
-        import pyaudiowpatch as pyaudio
-    except ImportError as exc:  # pragma: no cover - platform dependent
-        raise RuntimeError(
-            "PyAudioWPatch is required for recording and is Windows-only. "
-            "Install it with `pip install --user PyAudioWPatch`."
-        ) from exc
+    pyaudio = _pyaudio()
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)

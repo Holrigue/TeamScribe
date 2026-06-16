@@ -81,6 +81,68 @@ def record(
     console.print(f"[bold green]Done.[/bold green] Session id: {session.name}")
 
 
+@app.command()
+def devices():
+    """List the audio devices TeamScribe will capture (speakers + mic)."""
+    from . import capture
+
+    try:
+        info = capture.list_devices()
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+
+    sp = info["default_speakers"]
+    mic = info["default_mic"]
+    console.print("[bold]Default speakers (loopback source):[/bold]")
+    console.print(f"  {sp['name']}  @ {sp['rate']} Hz")
+    console.print("[bold]Default microphone (your voice):[/bold]")
+    console.print(f"  {mic['name']}  @ {mic['rate']} Hz")
+    console.print(f"[dim]WASAPI loopback devices found: {len(info['loopback_devices'])}[/dim]")
+
+
+@app.command()
+def selftest(
+    seconds: float = typer.Option(6.0, help="How long to sample each stream."),
+):
+    """Record loopback + mic separately and report each stream's signal level.
+
+    Play a sound through your speakers AND speak into your mic during the
+    sample window, then check that BOTH streams show a non-zero RMS.
+    """
+    from . import capture
+
+    console.print(
+        f"[bold green]Sampling {seconds:.0f}s…[/bold green] "
+        "play a sound through your speakers AND speak into your mic now."
+    )
+    try:
+        result = capture.probe(seconds)
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+
+    def verdict(rms: float) -> str:
+        if rms >= 0.01:
+            return "[green]signal OK[/green]"
+        if rms > 0.0005:
+            return "[yellow]very quiet[/yellow]"
+        return "[red]SILENT[/red]"
+
+    for key in ("loopback", "microphone"):
+        s = result[key]
+        console.print(
+            f"[bold]{key}[/bold] ({s['name']}): rms={s['rms']:.4f} "
+            f"peak={s['peak']:.3f}  -> {verdict(s['rms'])}"
+        )
+
+    if result["loopback"]["rms"] < 0.0005 or result["microphone"]["rms"] < 0.0005:
+        console.print(
+            "\n[yellow]One stream looks silent.[/yellow] Check that audio was "
+            "actually playing (loopback) and that the right mic is the default."
+        )
+
+
 @app.command(name="transcribe")
 def transcribe_cmd(
     session: str = typer.Argument(None, help="Session id (default: latest)."),

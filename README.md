@@ -64,6 +64,10 @@ missing, set `TEAMSCRIBE_DEVICE=cpu`.
 ## Usage
 
 ```powershell
+# 0. (Optional) Check your audio setup before a real meeting.
+teamscribe devices     # list the speakers + mic TeamScribe will capture
+teamscribe selftest    # sample loopback + mic separately, report signal levels
+
 # 1. Record a meeting (Ctrl+C to stop). Transcribes + summarizes on stop.
 teamscribe record
 
