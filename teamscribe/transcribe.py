@@ -25,6 +25,26 @@ class Segment:
     text: str
 
 
+def _cuda_runtime_usable() -> bool:
+    """Check that the CUDA runtime DLLs ctranslate2 needs can actually load.
+
+    ``ctranslate2.get_cuda_device_count()`` only confirms an NVIDIA GPU is
+    present, not that cuBLAS/cuDNN are installed. Loading the CUDA path
+    in-process and having it fail partway through (e.g. missing
+    cublas64_12.dll) can leave the process in a state where even a CPU
+    fallback model construction segfaults — so we must verify the DLLs
+    load *before* ctranslate2 ever touches CUDA, not catch failures after.
+    """
+    import ctypes
+
+    for dll in ("cudart64_12.dll", "cublas64_12.dll", "cublasLt64_12.dll"):
+        try:
+            ctypes.WinDLL(dll)
+        except OSError:
+            return False
+    return True
+
+
 def _select_device(preference: str) -> tuple[str, str]:
     """Return (device, compute_type)."""
     if preference == "cpu":
@@ -32,11 +52,11 @@ def _select_device(preference: str) -> tuple[str, str]:
     if preference == "cuda":
         return "cuda", "float16"
 
-    # auto: try CUDA, fall back to CPU.
+    # auto: only pick CUDA if a GPU is reported AND its runtime DLLs load.
     try:
         import ctranslate2
 
-        if ctranslate2.get_cuda_device_count() > 0:
+        if ctranslate2.get_cuda_device_count() > 0 and _cuda_runtime_usable():
             return "cuda", "float16"
     except Exception:
         pass
@@ -61,21 +81,24 @@ def transcribe(
 
     model_name = config.whisper_model()
     device, compute_type = _select_device(config.device_preference())
-    log(f"Loading faster-whisper '{model_name}' on {device} ({compute_type})…")
 
-    model = WhisperModel(model_name, device=device, compute_type=compute_type)
+    def _run(device: str, compute_type: str) -> list[Segment]:
+        log(f"Loading faster-whisper '{model_name}' on {device} ({compute_type})…")
+        model = WhisperModel(model_name, device=device, compute_type=compute_type)
+        log("Transcribing (French, VAD filter on)…")
+        segments_iter, info = model.transcribe(
+            str(audio_path),
+            language="fr",
+            vad_filter=True,
+            beam_size=5,
+        )
+        result = [
+            Segment(start=seg.start, end=seg.end, text=seg.text.strip())
+            for seg in segments_iter
+        ]
+        return result, info
 
-    log("Transcribing (French, VAD filter on)…")
-    segments_iter, info = model.transcribe(
-        str(audio_path),
-        language="fr",
-        vad_filter=True,
-        beam_size=5,
-    )
-
-    segments: list[Segment] = []
-    for seg in segments_iter:
-        segments.append(Segment(start=seg.start, end=seg.end, text=seg.text.strip()))
+    segments, info = _run(device, compute_type)
 
     full_text = "\n".join(s.text for s in segments).strip()
     result = {

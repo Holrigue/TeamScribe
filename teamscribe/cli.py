@@ -9,12 +9,21 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import typer
 from rich.console import Console
 
 from . import config
+
+if sys.platform == "win32":
+    # Windows terminals (cmd.exe, legacy PowerShell) default to a codepage
+    # like cp1252 that can't encode the emoji/ellipsis rich prints (e.g. the
+    # ⏱ timer), crashing mid-recording with UnicodeEncodeError. Force UTF-8.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
 
 app = typer.Typer(
     add_completion=False,

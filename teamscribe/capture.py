@@ -60,10 +60,21 @@ class _StreamRecorder:
 
     def stop(self) -> None:
         self._running = False
-        if self._thread is not None:
-            self._thread.join(timeout=2.0)
+        # stop_stream() must happen *before* we join: the reader thread is
+        # blocked inside a blocking stream.read() call, and stop_stream()
+        # is what makes that pending read return. If we instead joined
+        # first (with a timeout) and then called close() regardless, a
+        # slow-to-return read could still be in flight inside PortAudio
+        # when close() frees the underlying WASAPI buffers — a
+        # use-after-free that crashes the whole process (SIGSEGV), not a
+        # catchable Python exception.
         try:
             self.stream.stop_stream()
+        except Exception:
+            pass
+        if self._thread is not None:
+            self._thread.join(timeout=5.0)
+        try:
             self.stream.close()
         except Exception:
             pass
