@@ -126,6 +126,9 @@ _GUI_DEFAULTS = {
     "hidden_sessions": [],  # session folder names removed from the widget list only
     "pinned": False,  # when true, the widget can't be dragged/moved
     "theme": "dark",  # "dark" or "light"
+    "glass_opacity": 100,  # 0-100; lower = more see-through ("liquid glass")
+    "pos_x": None,  # last on-screen position; None = not yet placed
+    "pos_y": None,
 }
 
 

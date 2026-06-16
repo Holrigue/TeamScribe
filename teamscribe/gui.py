@@ -15,12 +15,14 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
+import sys
 import threading
 import webbrowser
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, Qt, QThread, Signal
-from PySide6.QtGui import QKeyEvent, QMouseEvent
+from PySide6.QtCore import QEvent, QPoint, Qt, QThread, Signal
+from PySide6.QtGui import QGuiApplication, QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -36,6 +38,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QSizeGrip,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -153,6 +156,15 @@ class SettingsDialog(QDialog):
         theme_row.addWidget(self.light_radio)
         layout.addLayout(theme_row)
 
+        self.glass_label = QLabel()
+        layout.addWidget(self.glass_label)
+        self.glass_slider = QSlider(Qt.Horizontal)
+        self.glass_slider.setRange(20, 100)
+        self.glass_slider.setValue(self.settings.get("glass_opacity", 100))
+        self.glass_slider.valueChanged.connect(self._update_glass_label)
+        self._update_glass_label(self.glass_slider.value())
+        layout.addWidget(self.glass_slider)
+
         desktop_btn = QPushButton("Créer un raccourci sur le bureau")
         desktop_btn.clicked.connect(self._create_desktop_shortcut)
         layout.addWidget(desktop_btn)
@@ -169,6 +181,9 @@ class SettingsDialog(QDialog):
         buttons_row.addWidget(save_btn)
         buttons_row.addWidget(cancel_btn)
         layout.addLayout(buttons_row)
+
+    def _update_glass_label(self, value: int) -> None:
+        self.glass_label.setText(f"Effet verre liquide (transparence) : {value}%")
 
     def _create_desktop_shortcut(self) -> None:
         try:
@@ -205,6 +220,7 @@ class SettingsDialog(QDialog):
         self.settings["auto_summarize"] = self.summarize_box.isChecked()
         self.settings["always_on_top"] = self.ontop_box.isChecked()
         self.settings["theme"] = "light" if self.light_radio.isChecked() else "dark"
+        self.settings["glass_opacity"] = self.glass_slider.value()
         config.save_gui_settings(self.settings)
         super().accept()
 
@@ -220,7 +236,7 @@ class TeamScribeWidget(QWidget):
         self.setWindowFlags(
             Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
         )
-        self.setAttribute(Qt.WA_TranslucentBackground, False)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.resize(300, 420)
 
         self._drag_offset = None
@@ -231,27 +247,68 @@ class TeamScribeWidget(QWidget):
 
         self._build_ui()
         self._apply_always_on_top(self.settings.get("always_on_top", True))
-        self._apply_theme(self.settings.get("theme", "dark"))
+        self._apply_theme()
         self.pin_btn.setChecked(self.settings.get("pinned", False))
+        self._restore_position()
         self.refresh_sessions()
+
+    # -- position memory --------------------------------------------------
+
+    def _position_is_visible(self, x: int, y: int) -> bool:
+        point = QPoint(x, y)
+        for screen in QGuiApplication.screens():
+            # A small margin so a widget mostly off-screen (but with its
+            # corner still reachable) still counts as visible.
+            if screen.availableGeometry().adjusted(-50, -50, 50, 50).contains(point):
+                return True
+        return False
+
+    def _move_to_corner(self) -> None:
+        screen = QGuiApplication.primaryScreen()
+        geo = screen.availableGeometry()
+        margin = 20
+        self.move(geo.right() - self.width() - margin, geo.top() + margin)
+
+    def _restore_position(self) -> None:
+        x = self.settings.get("pos_x")
+        y = self.settings.get("pos_y")
+        if x is not None and y is not None and self._position_is_visible(x, y):
+            self.move(x, y)
+        else:
+            self._move_to_corner()
+
+    def _save_position(self) -> None:
+        self.settings["pos_x"] = self.x()
+        self.settings["pos_y"] = self.y()
+        config.save_gui_settings(self.settings)
+
+    def closeEvent(self, event) -> None:
+        self._save_position()
+        super().closeEvent(event)
 
     # -- chrome / dragging --------------------------------------------------
 
     @staticmethod
-    def _stylesheet(theme: str) -> str:
+    def _stylesheet(theme: str, glass_opacity: int = 100) -> str:
+        # "Liquid glass": the outer panel background gets an alpha channel so
+        # the desktop shows through behind it, while buttons/list/text stay
+        # fully opaque so the UI remains readable.
+        alpha = max(0, min(100, glass_opacity)) / 100 * 255
         if theme == "light":
+            root_bg = f"rgba(242, 242, 242, {alpha:.0f})"
             return (
-                "#root { background: #f2f2f2; border: 1px solid #c8c8c8; border-radius: 8px; }"
-                "QLabel { color: #1e1e1e; }"
+                f"#root {{ background: {root_bg}; border: 1px solid #c8c8c8; border-radius: 8px; }}"
+                "QLabel { color: #1e1e1e; background: transparent; }"
                 "QPushButton { background: #ffffff; color: #1e1e1e; border: 1px solid #bbb;"
                 " border-radius: 4px; padding: 6px; }"
                 "QPushButton:hover { background: #e6e6e6; }"
                 "QPushButton:disabled { color: #999; }"
                 "QListWidget { background: #ffffff; color: #1e1e1e; border: 1px solid #ccc; }"
             )
+        root_bg = f"rgba(30, 30, 30, {alpha:.0f})"
         return (
-            "#root { background: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 8px; }"
-            "QLabel { color: #e0e0e0; }"
+            f"#root {{ background: {root_bg}; border: 1px solid #3a3a3a; border-radius: 8px; }}"
+            "QLabel { color: #e0e0e0; background: transparent; }"
             "QPushButton { background: #2d2d2d; color: #e0e0e0; border: 1px solid #444;"
             " border-radius: 4px; padding: 6px; }"
             "QPushButton:hover { background: #3a3a3a; }"
@@ -259,8 +316,10 @@ class TeamScribeWidget(QWidget):
             "QListWidget { background: #181818; color: #d0d0d0; border: 1px solid #333; }"
         )
 
-    def _apply_theme(self, theme: str) -> None:
-        self.root_frame.setStyleSheet(self._stylesheet(theme))
+    def _apply_theme(self) -> None:
+        theme = self.settings.get("theme", "dark")
+        glass_opacity = self.settings.get("glass_opacity", 100)
+        self.root_frame.setStyleSheet(self._stylesheet(theme, glass_opacity))
 
     def _build_ui(self) -> None:
         root = QFrame(self)
@@ -290,6 +349,10 @@ class TeamScribeWidget(QWidget):
         settings_btn.setStyleSheet("font-size: 15px;")
         settings_btn.setToolTip("Paramètres")
         settings_btn.clicked.connect(self.open_settings)
+        restart_btn = QPushButton("⟳")
+        restart_btn.setFixedSize(22, 22)
+        restart_btn.setToolTip("Redémarrer l'application")
+        restart_btn.clicked.connect(self.restart_app)
         close_btn = QPushButton("×")
         close_btn.setFixedSize(22, 22)
         close_btn.clicked.connect(self.close)
@@ -298,6 +361,7 @@ class TeamScribeWidget(QWidget):
         title_row.addWidget(self.status_dot)
         title_row.addWidget(title)
         title_row.addStretch()
+        title_row.addWidget(restart_btn)
         title_row.addWidget(close_btn)
         layout.addLayout(title_row)
 
@@ -361,7 +425,7 @@ class TeamScribeWidget(QWidget):
     def set_pinned(self, pinned: bool) -> None:
         self._pinned = pinned
         self.pin_btn.setStyleSheet(
-            "font-size: 13px; background: #b08900; border: 1px solid #d4a700;"
+            "font-size: 13px; background: #2e8b3d; border: 1px solid #3fae52;"
             if pinned else "font-size: 13px;"
         )
         self.pin_btn.setToolTip(
@@ -386,7 +450,21 @@ class TeamScribeWidget(QWidget):
         if dialog.exec() == QDialog.Accepted:
             self.settings = config.load_gui_settings()
             self._apply_always_on_top(self.settings.get("always_on_top", True))
-            self._apply_theme(self.settings.get("theme", "dark"))
+            self._apply_theme()
+
+    def restart_app(self) -> None:
+        if self._record_worker is not None:
+            QMessageBox.information(
+                self, "TeamScribe",
+                "Arrête l'enregistrement en cours avant de redémarrer."
+            )
+            return
+        self._save_position()
+        python = Path(sys.executable)
+        pythonw = python.with_name("pythonw.exe")
+        exe = str(pythonw) if pythonw.is_file() else str(python)
+        subprocess.Popen([exe, "-m", "teamscribe.cli", "gui"], cwd=str(config.ROOT))
+        QApplication.quit()
 
     # -- sessions list --------------------------------------------------
 
