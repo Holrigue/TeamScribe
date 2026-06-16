@@ -1,0 +1,37 @@
+# --- Secrets & local config (NEVER commit) ---
+.env
+*.env
+!.env.example
+
+# MSAL / Microsoft Graph token cache (contains refresh tokens)
+token_cache.bin
+*.token_cache
+.msal_cache*
+
+# --- Recorded sessions (audio + transcripts + summaries) ---
+sessions/*
+!sessions/.gitkeep
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+.venv/
+venv/
+env/
+.Python
+pip-wheel-metadata/
+
+# --- faster-whisper model cache (large) ---
+models/
+*.bin.download
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
