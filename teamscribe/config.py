@@ -6,6 +6,7 @@ read from or written to the Windows registry.
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SESSIONS_DIR = ROOT / "sessions"
 ENV_PATH = ROOT / ".env"
 TOKEN_CACHE_PATH = ROOT / "token_cache.bin"
+GUI_SETTINGS_PATH = ROOT / "gui_settings.json"
 
 # Load .env once, on import. override=False so real env vars win.
 load_dotenv(ENV_PATH, override=False)
@@ -112,3 +114,32 @@ def set_env_value(key: str, value: str) -> None:
 
     ENV_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
     os.environ[key] = value
+
+
+# ---- GUI preferences --------------------------------------------------
+# Non-secret widget prefs (auto-summarize, always-on-top...), kept separate
+# from .env which is reserved for credentials/Planner ids.
+
+_GUI_DEFAULTS = {
+    "auto_summarize": True,
+    "always_on_top": True,
+    "hidden_sessions": [],  # session folder names removed from the widget list only
+    "pinned": False,  # when true, the widget can't be dragged/moved
+    "theme": "dark",  # "dark" or "light"
+}
+
+
+def load_gui_settings() -> dict:
+    if not GUI_SETTINGS_PATH.is_file():
+        return dict(_GUI_DEFAULTS)
+    try:
+        data = json.loads(GUI_SETTINGS_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return dict(_GUI_DEFAULTS)
+    return {**_GUI_DEFAULTS, **data}
+
+
+def save_gui_settings(settings: dict) -> None:
+    GUI_SETTINGS_PATH.write_text(
+        json.dumps(settings, indent=2), encoding="utf-8"
+    )

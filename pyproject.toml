@@ -25,6 +25,7 @@ dependencies = [
     "typer>=0.12",              # CLI
     "rich>=13.7",               # pretty console output / timers
     "python-dotenv>=1.0",       # load secrets from .env (never the registry)
+    "PySide6>=6.6",              # desktop widget (teamscribe gui)
 ]
 
 [project.optional-dependencies]

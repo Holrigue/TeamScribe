@@ -260,14 +260,22 @@ def probe(seconds: float = 6.0) -> dict:
     }
 
 
-def record(out_path: Path, max_minutes: float, on_tick=None) -> Path:
-    """Capture loopback + mic until Ctrl+C or ``max_minutes``.
+def record(
+    out_path: Path,
+    max_minutes: float,
+    on_tick=None,
+    stop_event: threading.Event | None = None,
+) -> Path:
+    """Capture loopback + mic until Ctrl+C, ``stop_event``, or ``max_minutes``.
 
     Args:
         out_path: where to write the mixed 16 kHz mono WAV.
         max_minutes: hard stop after this many minutes.
         on_tick: optional callable(elapsed_seconds, mic_name, speaker_name)
                  invoked roughly once a second for a live timer display.
+        stop_event: optional threading.Event a caller can set() from another
+                    thread to stop the recording (used by the GUI's Stop
+                    button, since a non-console caller can't send Ctrl+C).
 
     Returns the written WAV path.
     """
@@ -295,6 +303,8 @@ def record(out_path: Path, max_minutes: float, on_tick=None) -> Path:
         deadline = start + max_minutes * 60.0
         try:
             while time.monotonic() < deadline:
+                if stop_event is not None and stop_event.is_set():
+                    break
                 elapsed = time.monotonic() - start
                 if on_tick is not None:
                     on_tick(elapsed, mic_name, speaker_name)

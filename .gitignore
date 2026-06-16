@@ -12,6 +12,9 @@ token_cache.bin
 sessions/*
 !sessions/.gitkeep
 
+# Local-only GUI prefs (per-machine, not secret but not shared config)
+gui_settings.json
+
 # --- Python ---
 __pycache__/
 *.py[cod]

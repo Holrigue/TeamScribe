@@ -55,7 +55,7 @@ def record(
     ),
 ):
     """Capture loopback + mic, then transcribe (and summarize) on stop."""
-    from . import capture, summarize as summarize_mod, transcribe
+    from . import capture, naming, summarize as summarize_mod, transcribe
 
     session = config.new_session_dir()
     audio_path = session / "audio.wav"
@@ -79,13 +79,15 @@ def record(
     console.print()  # newline after the timer
     console.print(f"[green]Saved audio:[/green] {audio_path}")
 
-    transcribe.transcribe(audio_path, session, log=console.print)
+    result = transcribe.transcribe(audio_path, session, log=console.print)
 
     if summarize:
         try:
             summarize_mod.summarize_session(session, log=console.print)
         except Exception as exc:
             console.print(f"[red]Summarization skipped:[/red] {exc}")
+
+    session = naming.finalize_session(session, result["text"], log=console.print)
 
     console.print(f"[bold green]Done.[/bold green] Session id: {session.name}")
 
@@ -157,10 +159,11 @@ def transcribe_cmd(
     session: str = typer.Argument(None, help="Session id (default: latest)."),
 ):
     """Transcribe a session's audio.wav (rarely needed; record does it)."""
-    from . import transcribe
+    from . import naming, transcribe
 
     path = _resolve_session(session)
-    transcribe.transcribe(path / "audio.wav", path, log=console.print)
+    result = transcribe.transcribe(path / "audio.wav", path, log=console.print)
+    naming.finalize_session(path, result["text"], log=console.print)
 
 
 @app.command()
@@ -294,6 +297,14 @@ def push_tasks(
             console.print(f"[red]✗ Failed:[/red] {title} — {exc}")
 
     console.print(f"\n[bold green]Created {len(created)} task(s).[/bold green]")
+
+
+@app.command()
+def gui():
+    """Launch the desktop widget (start/stop recording, browse sessions)."""
+    from . import gui as gui_mod
+
+    gui_mod.main()
 
 
 if __name__ == "__main__":
