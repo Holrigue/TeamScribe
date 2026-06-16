@@ -129,6 +129,7 @@ _GUI_DEFAULTS = {
     "glass_opacity": 100,  # 0-100; lower = more see-through ("liquid glass")
     "pos_x": None,  # last on-screen position; None = not yet placed
     "pos_y": None,
+    "language": "en",  # "en" or "fr"; new installs default to English
 }
 
 

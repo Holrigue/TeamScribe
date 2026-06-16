@@ -47,9 +47,12 @@ TeamScribe is designed to install and run from a normal Windows 11 terminal
 ### Easiest: guided installer
 
 New to this project? Right-click **`install.ps1`** → *Run with PowerShell*.
-It walks you through everything step by step (Python check, installing
-TeamScribe, your Anthropic key, optional Planner setup, desktop shortcut,
-launch-at-startup) and asks before doing anything — no admin rights needed.
+It asks for your language first (English or Français), then walks you
+through everything step by step (Python check, installing TeamScribe, your
+Anthropic key, optional Planner setup, desktop shortcut, launch-at-startup)
+and asks before doing anything — no admin rights needed. The widget itself
+defaults to English for new installs; switch it to Français anytime in its
+Settings.
 
 ### Manual
 

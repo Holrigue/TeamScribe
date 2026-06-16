@@ -44,6 +44,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import config, shortcuts, update
+from .i18n import tr
 
 
 # --------------------------------------------------------------------------
@@ -133,27 +134,46 @@ class TaskWorker(QThread):
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Paramètres — TeamScribe")
         self.settings = config.load_gui_settings()
+        self.lang = self.settings.get("language", "en")
+        self.setWindowTitle(tr("settings_title", self.lang))
 
         layout = QVBoxLayout(self)
 
-        self.startup_box = QCheckBox("Lancer au démarrage de Windows")
+        self.startup_box = QCheckBox(tr("launch_at_startup", self.lang))
         self.startup_box.setChecked(shortcuts.is_startup_enabled())
         layout.addWidget(self.startup_box)
 
-        self.summarize_box = QCheckBox("Résumer automatiquement après l'enregistrement")
+        self.summarize_box = QCheckBox(tr("auto_summarize", self.lang))
         self.summarize_box.setChecked(self.settings.get("auto_summarize", True))
         layout.addWidget(self.summarize_box)
 
-        self.ontop_box = QCheckBox("Toujours par-dessus les autres fenêtres")
+        self.ontop_box = QCheckBox(tr("always_on_top", self.lang))
         self.ontop_box.setChecked(self.settings.get("always_on_top", True))
         layout.addWidget(self.ontop_box)
 
-        layout.addWidget(QLabel("Thème :"))
+        layout.addWidget(QLabel(tr("language_label", self.lang)))
+        lang_row = QHBoxLayout()
+        self.en_radio = QRadioButton("English")
+        self.fr_radio = QRadioButton("Français")
+        lang_group = QButtonGroup(self)
+        lang_group.addButton(self.en_radio)
+        lang_group.addButton(self.fr_radio)
+        if self.lang == "fr":
+            self.fr_radio.setChecked(True)
+        else:
+            self.en_radio.setChecked(True)
+        lang_row.addWidget(self.en_radio)
+        lang_row.addWidget(self.fr_radio)
+        layout.addLayout(lang_row)
+        lang_note = QLabel(tr("language_restart_note", self.lang))
+        lang_note.setStyleSheet("color: #999; font-size: 11px;")
+        layout.addWidget(lang_note)
+
+        layout.addWidget(QLabel(tr("theme_label", self.lang)))
         theme_row = QHBoxLayout()
-        self.dark_radio = QRadioButton("Sombre")
-        self.light_radio = QRadioButton("Clair")
+        self.dark_radio = QRadioButton(tr("theme_dark", self.lang))
+        self.light_radio = QRadioButton(tr("theme_light", self.lang))
         theme_group = QButtonGroup(self)
         theme_group.addButton(self.dark_radio)
         theme_group.addButton(self.light_radio)
@@ -174,21 +194,21 @@ class SettingsDialog(QDialog):
         self._update_glass_label(self.glass_slider.value())
         layout.addWidget(self.glass_slider)
 
-        desktop_btn = QPushButton("Créer un raccourci sur le bureau")
+        desktop_btn = QPushButton(tr("create_desktop_shortcut", self.lang))
         desktop_btn.clicked.connect(self._create_desktop_shortcut)
         layout.addWidget(desktop_btn)
 
-        devices_btn = QPushButton("Vérifier l'audio")
+        devices_btn = QPushButton(tr("check_audio", self.lang))
         devices_btn.clicked.connect(self._run_selftest)
         layout.addWidget(devices_btn)
 
-        layout.addWidget(QLabel("Mise à jour :"))
+        layout.addWidget(QLabel(tr("update_label", self.lang)))
         self.update_status_label = QLabel("…")
         layout.addWidget(self.update_status_label)
         update_row = QHBoxLayout()
-        check_update_btn = QPushButton("Vérifier maintenant")
+        check_update_btn = QPushButton(tr("check_now", self.lang))
         check_update_btn.clicked.connect(self._check_update_now)
-        self.apply_update_btn = QPushButton("Mettre à jour")
+        self.apply_update_btn = QPushButton(tr("update_now", self.lang))
         self.apply_update_btn.clicked.connect(self._apply_update_now)
         update_row.addWidget(check_update_btn)
         update_row.addWidget(self.apply_update_btn)
@@ -196,36 +216,36 @@ class SettingsDialog(QDialog):
         self._refresh_update_status((parent._update_info if parent else None) or {})
 
         buttons_row = QHBoxLayout()
-        save_btn = QPushButton("Enregistrer")
+        save_btn = QPushButton(tr("save", self.lang))
         save_btn.clicked.connect(self.accept)
-        cancel_btn = QPushButton("Annuler")
+        cancel_btn = QPushButton(tr("cancel", self.lang))
         cancel_btn.clicked.connect(self.reject)
         buttons_row.addWidget(save_btn)
         buttons_row.addWidget(cancel_btn)
         layout.addLayout(buttons_row)
 
-        kofi_label = QLabel('<a href="https://ko-fi.com/gabrielhoule">☕ Soutenir TeamScribe sur Ko-fi</a>')
+        kofi_label = QLabel(tr("kofi_link", self.lang))
         kofi_label.setOpenExternalLinks(True)
         kofi_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(kofi_label)
 
     def _refresh_update_status(self, info: dict) -> None:
         if info.get("error") == "not-a-git-checkout":
-            self.update_status_label.setText("Vérification indisponible (projet non cloné via git).")
+            self.update_status_label.setText(tr("update_check_unavailable", self.lang))
             self.apply_update_btn.setEnabled(False)
         elif info.get("error"):
-            self.update_status_label.setText(f"Vérification impossible : {info['error']}")
+            self.update_status_label.setText(tr("update_check_failed", self.lang, error=info["error"]))
             self.apply_update_btn.setEnabled(False)
         elif info.get("available"):
             behind = info.get("behind", 0)
-            self.update_status_label.setText(f"Une mise à jour est disponible ({behind} commit(s)).")
+            self.update_status_label.setText(tr("update_available", self.lang, behind=behind))
             self.apply_update_btn.setEnabled(True)
         else:
-            self.update_status_label.setText("TeamScribe est à jour.")
+            self.update_status_label.setText(tr("update_up_to_date", self.lang))
             self.apply_update_btn.setEnabled(False)
 
     def _check_update_now(self) -> None:
-        self.update_status_label.setText("Vérification…")
+        self.update_status_label.setText(tr("update_checking", self.lang))
         QApplication.processEvents()
         info = update.check_for_update()
         parent = self.parent()
@@ -236,28 +256,27 @@ class SettingsDialog(QDialog):
 
     def _apply_update_now(self) -> None:
         confirm = QMessageBox.question(
-            self, "Mettre à jour",
-            "Télécharger et installer la dernière version de TeamScribe ?\n"
-            "L'application devra être redémarrée après.",
+            self, tr("update_confirm_title", self.lang),
+            tr("update_confirm_body", self.lang),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
         if confirm != QMessageBox.Yes:
             return
         self.apply_update_btn.setEnabled(False)
-        self.update_status_label.setText("Mise à jour en cours…")
+        self.update_status_label.setText(tr("update_in_progress", self.lang))
         QApplication.processEvents()
         try:
             update.apply_update(log=lambda msg: (
                 self.update_status_label.setText(msg), QApplication.processEvents()
             ))
         except Exception as exc:
-            QMessageBox.warning(self, "TeamScribe", f"Échec de la mise à jour :\n{exc}")
+            QMessageBox.warning(self, "TeamScribe", tr("update_failed", self.lang, error=exc))
             self._refresh_update_status(update.check_for_update())
             return
-        self.update_status_label.setText("Mise à jour terminée. Redémarrage nécessaire.")
+        self.update_status_label.setText(tr("update_done", self.lang))
         if QMessageBox.question(
-            self, "Redémarrer",
-            "Redémarrer TeamScribe maintenant pour appliquer la mise à jour ?",
+            self, tr("restart_confirm_title", self.lang),
+            tr("restart_confirm_body", self.lang),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
         ) == QMessageBox.Yes:
             parent = self.parent()
@@ -266,15 +285,15 @@ class SettingsDialog(QDialog):
                 parent.restart_app()
 
     def _update_glass_label(self, value: int) -> None:
-        self.glass_label.setText(f"Effet verre liquide (transparence) : {value}%")
+        self.glass_label.setText(tr("glass_opacity_label", self.lang, value=value))
 
     def _create_desktop_shortcut(self) -> None:
         try:
             path = shortcuts.create_desktop_shortcut()
         except Exception as exc:
-            QMessageBox.warning(self, "TeamScribe", f"Échec de la création :\n{exc}")
+            QMessageBox.warning(self, "TeamScribe", tr("shortcut_create_failed", self.lang, error=exc))
             return
-        QMessageBox.information(self, "TeamScribe", f"Raccourci créé :\n{path}")
+        QMessageBox.information(self, "TeamScribe", tr("shortcut_created", self.lang, path=path))
 
     def _run_selftest(self) -> None:
         from . import capture
@@ -284,19 +303,20 @@ class SettingsDialog(QDialog):
         except RuntimeError as exc:
             QMessageBox.warning(self, "TeamScribe", str(exc))
             return
-        msg = (
-            f"Haut-parleurs : {info['default_speakers']['name']}\n"
-            f"Micro : {info['default_mic']['name']}\n"
-            f"Périphériques loopback détectés : {len(info['loopback_devices'])}"
+        msg = tr(
+            "audio_check_result", self.lang,
+            speakers=info["default_speakers"]["name"],
+            mic=info["default_mic"]["name"],
+            count=len(info["loopback_devices"]),
         )
-        QMessageBox.information(self, "Audio", msg)
+        QMessageBox.information(self, tr("audio_title", self.lang), msg)
 
     def accept(self) -> None:
         try:
             shortcuts.set_startup_enabled(self.startup_box.isChecked())
         except Exception as exc:
             QMessageBox.warning(
-                self, "TeamScribe", f"Échec de la mise à jour du démarrage automatique :\n{exc}"
+                self, "TeamScribe", tr("startup_toggle_failed", self.lang, error=exc)
             )
             return
 
@@ -304,6 +324,7 @@ class SettingsDialog(QDialog):
         self.settings["always_on_top"] = self.ontop_box.isChecked()
         self.settings["theme"] = "light" if self.light_radio.isChecked() else "dark"
         self.settings["glass_opacity"] = self.glass_slider.value()
+        self.settings["language"] = "fr" if self.fr_radio.isChecked() else "en"
         config.save_gui_settings(self.settings)
         super().accept()
 
@@ -332,6 +353,7 @@ class TeamScribeWidget(QWidget):
         self._update_check_worker: UpdateCheckWorker | None = None
         self._update_info: dict = {"available": False}
         self.settings = config.load_gui_settings()
+        self.lang = self.settings.get("language", "en")
 
         self._build_ui()
         self._apply_always_on_top(self.settings.get("always_on_top", True))
@@ -433,12 +455,12 @@ class TeamScribeWidget(QWidget):
         self.pin_btn.setFixedSize(24, 24)
         self.pin_btn.setStyleSheet("font-size: 13px;")
         self.pin_btn.setCheckable(True)
-        self.pin_btn.setToolTip("Épingler (bloquer le déplacement)")
+        self.pin_btn.setToolTip(tr("pin_tooltip_off", self.lang))
         self.pin_btn.toggled.connect(self.set_pinned)
         self.settings_btn = QPushButton("⚙️")
         self.settings_btn.setFixedSize(24, 24)
         self.settings_btn.setStyleSheet("font-size: 15px;")
-        self.settings_btn.setToolTip("Paramètres")
+        self.settings_btn.setToolTip(tr("settings_tooltip", self.lang))
         self.settings_btn.clicked.connect(self.open_settings)
         self.update_badge = QLabel(self.settings_btn)
         self.update_badge.setFixedSize(8, 8)
@@ -449,7 +471,7 @@ class TeamScribeWidget(QWidget):
         self.update_badge.hide()
         restart_btn = QPushButton("⟳")
         restart_btn.setFixedSize(22, 22)
-        restart_btn.setToolTip("Redémarrer l'application")
+        restart_btn.setToolTip(tr("restart_tooltip", self.lang))
         restart_btn.clicked.connect(self.restart_app)
         close_btn = QPushButton("×")
         close_btn.setFixedSize(22, 22)
@@ -463,17 +485,17 @@ class TeamScribeWidget(QWidget):
         title_row.addWidget(close_btn)
         layout.addLayout(title_row)
 
-        self.status_label = QLabel("Prêt")
+        self.status_label = QLabel(tr("status_ready", self.lang))
         self.status_label.setStyleSheet("color: #999;")
         layout.addWidget(self.status_label)
 
         # Record button
-        self.record_btn = QPushButton("● Démarrer l'enregistrement")
+        self.record_btn = QPushButton(tr("record_start", self.lang))
         self.record_btn.clicked.connect(self.toggle_recording)
         self._set_record_btn_color(recording=False)
         layout.addWidget(self.record_btn)
 
-        layout.addWidget(QLabel("Sessions récentes :"))
+        layout.addWidget(QLabel(tr("recent_sessions", self.lang)))
         self.session_list = QListWidget()
         self.session_list.setSelectionMode(QListWidget.ExtendedSelection)
         self.session_list.itemDoubleClicked.connect(self._open_session_folder)
@@ -483,18 +505,18 @@ class TeamScribeWidget(QWidget):
         layout.addWidget(self.session_list)
 
         actions_row = QHBoxLayout()
-        self.summarize_btn = QPushButton("Résumer")
+        self.summarize_btn = QPushButton(tr("summarize_btn", self.lang))
         self.summarize_btn.clicked.connect(self.run_summarize)
-        self.push_btn = QPushButton("Pousser → Planner")
+        self.push_btn = QPushButton(tr("push_planner_btn", self.lang))
         self.push_btn.clicked.connect(self.run_push_tasks)
         actions_row.addWidget(self.summarize_btn)
         actions_row.addWidget(self.push_btn)
         layout.addLayout(actions_row)
 
         bottom_row = QHBoxLayout()
-        refresh_btn = QPushButton("Rafraîchir la liste")
+        refresh_btn = QPushButton(tr("refresh_list_btn", self.lang))
         refresh_btn.clicked.connect(self.refresh_sessions)
-        open_folder_btn = QPushButton("Ouvrir dossier")
+        open_folder_btn = QPushButton(tr("open_folder_btn", self.lang))
         open_folder_btn.clicked.connect(self.open_sessions_folder)
         bottom_row.addWidget(refresh_btn)
         bottom_row.addWidget(open_folder_btn)
@@ -532,7 +554,7 @@ class TeamScribeWidget(QWidget):
             if pinned else "font-size: 13px;"
         )
         self.pin_btn.setToolTip(
-            "Désépingler (autoriser le déplacement)" if pinned else "Épingler (bloquer le déplacement)"
+            tr("pin_tooltip_on", self.lang) if pinned else tr("pin_tooltip_off", self.lang)
         )
         self.settings["pinned"] = pinned
         config.save_gui_settings(self.settings)
@@ -558,8 +580,7 @@ class TeamScribeWidget(QWidget):
     def restart_app(self) -> None:
         if self._record_worker is not None:
             QMessageBox.information(
-                self, "TeamScribe",
-                "Arrête l'enregistrement en cours avant de redémarrer."
+                self, "TeamScribe", tr("restart_blocked", self.lang)
             )
             return
         self._save_position()
@@ -643,7 +664,7 @@ class TeamScribeWidget(QWidget):
         if item not in self.session_list.selectedItems():
             self.session_list.setCurrentItem(item)
         menu = QMenu(self)
-        menu.addAction("Supprimer…", self._delete_selected_sessions)
+        menu.addAction(tr("delete_action", self.lang), self._delete_selected_sessions)
         menu.exec(self.session_list.mapToGlobal(pos))
 
     def _delete_selected_sessions(self) -> None:
@@ -652,17 +673,17 @@ class TeamScribeWidget(QWidget):
             return
 
         if len(paths) == 1:
-            names = f"« {paths[0].name} »"
+            names = tr("names_single", self.lang, name=paths[0].name)
         else:
-            names = f"ces {len(paths)} sessions"
+            names = tr("names_plural", self.lang, count=len(paths))
 
         box = QMessageBox(self)
-        box.setWindowTitle("Supprimer la session")
-        box.setText(f"Que faire avec {names} ?")
+        box.setWindowTitle(tr("delete_session_title", self.lang))
+        box.setText(tr("delete_session_body", self.lang, names=names))
         box.setIcon(QMessageBox.Question)
-        widget_btn = box.addButton("Retirer du widget seulement", QMessageBox.ActionRole)
-        delete_btn = box.addButton("Supprimer le(s) dossier(s) complet(s)", QMessageBox.DestructiveRole)
-        box.addButton("Annuler", QMessageBox.RejectRole)
+        widget_btn = box.addButton(tr("remove_from_widget", self.lang), QMessageBox.ActionRole)
+        delete_btn = box.addButton(tr("delete_folders", self.lang), QMessageBox.DestructiveRole)
+        box.addButton(tr("cancel", self.lang), QMessageBox.RejectRole)
         box.setDefaultButton(widget_btn)
         box.exec()
         clicked = box.clickedButton()
@@ -677,9 +698,8 @@ class TeamScribeWidget(QWidget):
         elif clicked is delete_btn:
             confirm = QMessageBox.warning(
                 self,
-                "Confirmer la suppression",
-                f"Supprimer définitivement {names} et tout leur contenu "
-                "(audio, transcription, résumé) ? Cette action est irréversible.",
+                tr("confirm_delete_title", self.lang),
+                tr("confirm_delete_body", self.lang, names=names),
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No,
             )
@@ -699,7 +719,7 @@ class TeamScribeWidget(QWidget):
             self.refresh_sessions()
             if errors:
                 QMessageBox.warning(
-                    self, "TeamScribe", "Échec de la suppression :\n" + "\n".join(errors)
+                    self, "TeamScribe", tr("delete_failed", self.lang, errors="\n".join(errors))
                 )
 
     # -- recording --------------------------------------------------
@@ -718,7 +738,7 @@ class TeamScribeWidget(QWidget):
 
     def toggle_recording(self) -> None:
         if self._record_worker is not None:
-            self.status_label.setText("Arrêt en cours…")
+            self.status_label.setText(tr("stopping", self.lang))
             self.record_btn.setEnabled(False)
             self._record_worker.stop()
             return
@@ -732,15 +752,15 @@ class TeamScribeWidget(QWidget):
         self._record_worker.failed.connect(self._on_record_failed)
         self._record_worker.start()
 
-        self.record_btn.setText("■ Arrêter l'enregistrement")
+        self.record_btn.setText(tr("record_stop", self.lang))
         self._set_record_btn_color(recording=True)
         self.status_dot.setStyleSheet("color: #e53935; font-size: 14px;")
-        self.status_label.setText("À l'écoute… 00:00:00")
+        self.status_label.setText(tr("listening", self.lang, time="00:00:00"))
 
     def _on_tick(self, elapsed: float) -> None:
         m, s = divmod(int(elapsed), 60)
         h, m = divmod(m, 60)
-        self.status_label.setText(f"À l'écoute… {h:02d}:{m:02d}:{s:02d}")
+        self.status_label.setText(tr("listening", self.lang, time=f"{h:02d}:{m:02d}:{s:02d}"))
 
     def _on_info(self, mic_name: str, speaker_name: str) -> None:
         self.status_label.setToolTip(f"mic: {mic_name}\nspeakers: {speaker_name}")
@@ -748,20 +768,20 @@ class TeamScribeWidget(QWidget):
     def _on_record_done(self, session: Path) -> None:
         self._record_worker = None
         self.record_btn.setEnabled(True)
-        self.record_btn.setText("● Démarrer l'enregistrement")
+        self.record_btn.setText(tr("record_start", self.lang))
         self._set_record_btn_color(recording=False)
         self.status_dot.setStyleSheet("color: #666; font-size: 14px;")
-        self.status_label.setText(f"Terminé : {session.name}")
+        self.status_label.setText(tr("record_done", self.lang, name=session.name))
         self.refresh_sessions()
 
     def _on_record_failed(self, message: str) -> None:
         self._record_worker = None
         self.record_btn.setEnabled(True)
-        self.record_btn.setText("● Démarrer l'enregistrement")
+        self.record_btn.setText(tr("record_start", self.lang))
         self._set_record_btn_color(recording=False)
         self.status_dot.setStyleSheet("color: #666; font-size: 14px;")
-        self.status_label.setText("Erreur")
-        QMessageBox.warning(self, "TeamScribe", f"Échec de l'enregistrement :\n{message}")
+        self.status_label.setText(tr("error", self.lang))
+        QMessageBox.warning(self, "TeamScribe", tr("record_failed", self.lang, error=message))
 
     # -- summarize / push-tasks --------------------------------------------------
 
@@ -783,34 +803,36 @@ class TeamScribeWidget(QWidget):
 
     def _on_task_failed(self, message: str) -> None:
         self._task_worker = None
-        self.status_label.setText("Erreur")
+        self.status_label.setText(tr("error", self.lang))
         QMessageBox.warning(self, "TeamScribe", message)
 
     def run_summarize(self) -> None:
         session = self._selected_session()
         if session is None:
-            QMessageBox.information(self, "TeamScribe", "Sélectionne une session d'abord.")
+            QMessageBox.information(self, "TeamScribe", tr("select_session_first", self.lang))
             return
 
         from . import summarize as summarize_mod
 
         def fn():
             summarize_mod.summarize_session(session, log=lambda *_: None)
-            return f"Résumé refait : {session.name}"
+            return tr("resummarized", self.lang, name=session.name)
 
-        self._run_task(fn, f"Résumé en cours pour {session.name}…", "Résumé terminé")
+        self._run_task(
+            fn,
+            tr("summarizing", self.lang, name=session.name),
+            tr("summary_done", self.lang),
+        )
 
     def run_push_tasks(self) -> None:
         session = self._selected_session()
         if session is None:
-            QMessageBox.information(self, "TeamScribe", "Sélectionne une session d'abord.")
+            QMessageBox.information(self, "TeamScribe", tr("select_session_first", self.lang))
             return
 
         summary_path = session / "summary.json"
         if not summary_path.is_file():
-            QMessageBox.information(
-                self, "TeamScribe", "Pas de summary.json — fais 'Résumer' d'abord."
-            )
+            QMessageBox.information(self, "TeamScribe", tr("no_summary_yet", self.lang))
             return
 
         from . import planner
@@ -819,7 +841,7 @@ class TeamScribeWidget(QWidget):
             summary = json.loads(summary_path.read_text(encoding="utf-8"))
             actions = summary.get("actions", [])
             if not actions:
-                return "Aucune action à pousser."
+                return tr("no_actions_to_push", self.lang)
             plan_id = config.require_env("PLANNER_PLAN_ID")
             bucket_id = config.require_env("PLANNER_BUCKET_ID")
             token = planner.get_token(log=lambda *_: None)
@@ -830,12 +852,12 @@ class TeamScribeWidget(QWidget):
                     continue
                 planner.create_task(
                     token, plan_id, bucket_id, title,
-                    due_iso=None, notes=f"Créé par TeamScribe ({session.name}).",
+                    due_iso=None, notes=tr("planner_task_notes", self.lang, name=session.name),
                 )
                 created += 1
-            return f"{created} tâche(s) créée(s) dans Planner."
+            return tr("planner_tasks_created", self.lang, count=created)
 
-        self._run_task(fn, "Envoi vers Planner…", "Tâches poussées")
+        self._run_task(fn, tr("sending_to_planner", self.lang), tr("tasks_pushed", self.lang))
 
 
 def main() -> None:
