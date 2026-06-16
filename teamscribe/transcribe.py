@@ -12,6 +12,7 @@ GPU is auto-detected (CUDA + float16); otherwise we fall back to CPU + int8.
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -25,6 +26,37 @@ class Segment:
     text: str
 
 
+def _register_nvidia_dll_dirs() -> None:
+    """Register the pip-installed CUDA runtime's DLL folders with Windows.
+
+    Since Python 3.8, Windows no longer searches ``PATH`` for DLLs loaded
+    by ``ctypes``/native extensions — ``os.add_dll_directory()`` is
+    required instead. The ``nvidia-cublas-cu12``/``nvidia-cudnn-cu12``/
+    ``nvidia-cuda-runtime-cu12`` pip wheels (the admin-free way to get a
+    usable CUDA runtime on Windows) ship their DLLs under
+    ``site-packages/nvidia/<pkg>/bin`` but don't register that directory
+    themselves, so without this neither our own DLL probe nor
+    ctranslate2's internal CUDA loading can find them even though they're
+    installed.
+    """
+    if sys.platform != "win32":
+        return
+    import importlib.util
+    import os
+
+    for pkg in ("cublas", "cudnn", "cuda_runtime", "cuda_nvrtc"):
+        spec = importlib.util.find_spec(f"nvidia.{pkg}")
+        if spec is None or not spec.submodule_search_locations:
+            continue
+        for location in spec.submodule_search_locations:
+            bin_dir = Path(location) / "bin"
+            if bin_dir.is_dir():
+                try:
+                    os.add_dll_directory(str(bin_dir))
+                except OSError:
+                    pass
+
+
 def _cuda_runtime_usable() -> bool:
     """Check that the CUDA runtime DLLs ctranslate2 needs can actually load.
 
@@ -36,6 +68,8 @@ def _cuda_runtime_usable() -> bool:
     load *before* ctranslate2 ever touches CUDA, not catch failures after.
     """
     import ctypes
+
+    _register_nvidia_dll_dirs()
 
     for dll in ("cudart64_12.dll", "cublas64_12.dll", "cublasLt64_12.dll"):
         try:

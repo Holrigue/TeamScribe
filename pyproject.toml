@@ -27,6 +27,16 @@ dependencies = [
     "python-dotenv>=1.0",       # load secrets from .env (never the registry)
 ]
 
+[project.optional-dependencies]
+# Pip-only CUDA runtime for GPU transcription (admin-free, no CUDA Toolkit
+# install needed). Install with `pip install --user -e .[gpu]` if you have
+# an NVIDIA GPU and want faster-than-CPU transcription.
+gpu = [
+    "nvidia-cublas-cu12",
+    "nvidia-cudnn-cu12",
+    "nvidia-cuda-runtime-cu12",
+]
+
 [project.scripts]
 teamscribe = "teamscribe.cli:app"
 
