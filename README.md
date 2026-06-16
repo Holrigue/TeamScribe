@@ -75,6 +75,22 @@ falls back to CPU (`int8`). Force it with `TEAMSCRIBE_DEVICE=cuda|cpu` in
 `.env`. CUDA needs the matching cuBLAS/cuDNN runtime on your machine; if it's
 missing, set `TEAMSCRIBE_DEVICE=cpu`.
 
+### Choosing an LLM provider (summarization)
+
+By default TeamScribe summarizes with Claude (Anthropic). To use OpenAI
+instead, set in `.env`:
+
+```
+TEAMSCRIBE_LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+TEAMSCRIBE_OPENAI_MODEL=gpt-4o-mini   # optional override
+```
+
+Only the official OpenAI API is supported (no custom base URL), so your key
+is never sent anywhere but `api.openai.com`. Both providers use native
+structured-output enforcement, so the summary JSON shape is guaranteed
+either way.
+
 ---
 
 ## Usage

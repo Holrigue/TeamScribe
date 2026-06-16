@@ -63,6 +63,16 @@ def summary_model() -> str:
     return env("TEAMSCRIBE_SUMMARY_MODEL", "claude-sonnet-4-6")
 
 
+def llm_provider() -> str:
+    """Which LLM backend powers summarize/naming: "anthropic" or "openai"."""
+    value = (env("TEAMSCRIBE_LLM_PROVIDER", "anthropic") or "anthropic").lower()
+    return value if value in ("anthropic", "openai") else "anthropic"
+
+
+def openai_model() -> str:
+    return env("TEAMSCRIBE_OPENAI_MODEL", "gpt-4o-mini")
+
+
 # ---- Session directories ---------------------------------------------------
 
 def new_session_dir(now: datetime | None = None) -> Path:
@@ -130,6 +140,7 @@ _GUI_DEFAULTS = {
     "pos_x": None,  # last on-screen position; None = not yet placed
     "pos_y": None,
     "language": "en",  # "en" or "fr"; new installs default to English
+    "keep_audio": True,  # False = delete audio.wav after transcription (privacy mode)
 }
 
 

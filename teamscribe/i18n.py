@@ -77,6 +77,16 @@ _STRINGS: dict[str, dict[str, str]] = {
     "restart_tooltip": {"en": "Restart the app", "fr": "Redémarrer l'application"},
     "status_ready": {"en": "Ready", "fr": "Prêt"},
     "record_start": {"en": "● Start recording", "fr": "● Démarrer l'enregistrement"},
+    "mic_audio_kept": {"en": "🎙️ Audio kept", "fr": "🎙️ Audio conservé"},
+    "mic_audio_not_kept": {"en": "🎙️🚫 Audio not kept (privacy mode)", "fr": "🎙️🚫 Audio non conservé (mode privé)"},
+    "mic_tooltip_off": {
+        "en": "Click to stop keeping a local audio copy (transcript only)",
+        "fr": "Clique pour ne plus garder de copie audio locale (texte seulement)",
+    },
+    "mic_tooltip_on": {
+        "en": "Click to keep the local audio copy again",
+        "fr": "Clique pour garder à nouveau la copie audio locale",
+    },
     "record_stop": {"en": "■ Stop recording", "fr": "■ Arrêter l'enregistrement"},
     "recent_sessions": {"en": "Recent sessions:", "fr": "Sessions récentes :"},
     "summarize_btn": {"en": "Summarize", "fr": "Résumer"},

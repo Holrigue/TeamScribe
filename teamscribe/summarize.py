@@ -1,4 +1,10 @@
-"""Summarize a meeting transcript into structured bullet points with Claude.
+"""Summarize a meeting transcript into structured bullet points with an LLM.
+
+Supports two backends, selected via TEAMSCRIBE_LLM_PROVIDER in .env:
+"anthropic" (default, Claude) or "openai". Both are used with native
+structured-output enforcement (Anthropic's output_config.format / OpenAI's
+json_schema response_format with strict=True) so the result is always
+valid JSON matching the schema below — no manual parsing/repair needed.
 
 Output JSON shape:
 
@@ -16,8 +22,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-
-import anthropic
 
 from . import config
 
@@ -76,13 +80,35 @@ _FINAL_INSTR = (
 )
 
 
-def _client() -> anthropic.Anthropic:
-    # Reads ANTHROPIC_API_KEY from the environment (loaded from .env).
+# Network calls get an explicit timeout so a stalled provider can't hang
+# the recording pipeline indefinitely.
+_REQUEST_TIMEOUT_S = 120.0
+
+
+def _client_and_model() -> tuple[str, object, str]:
+    """Return (provider, sdk_client, model) for the configured LLM backend.
+
+    Each provider's API key is read only from the environment (loaded from
+    the local, git-ignored .env) and never logged or persisted elsewhere.
+    """
+    provider = config.llm_provider()
+    if provider == "openai":
+        import openai
+
+        config.require_env("OPENAI_API_KEY")
+        # No custom base_url: this targets the official OpenAI API only,
+        # avoiding the SSRF-style risk of an attacker-controlled endpoint.
+        client = openai.OpenAI(timeout=_REQUEST_TIMEOUT_S)
+        return provider, client, config.openai_model()
+
+    import anthropic
+
     config.require_env("ANTHROPIC_API_KEY")
-    return anthropic.Anthropic()
+    client = anthropic.Anthropic(timeout=_REQUEST_TIMEOUT_S)
+    return provider, client, config.summary_model()
 
 
-def _extract_json(response) -> dict:
+def _extract_json_anthropic(response) -> dict:
     """output_config.format guarantees the first text block is valid JSON."""
     text = next((b.text for b in response.content if b.type == "text"), None)
     if text is None:
@@ -90,7 +116,7 @@ def _extract_json(response) -> dict:
     return json.loads(text)
 
 
-def _summarize_text(client, model: str, instruction: str, payload: str) -> dict:
+def _summarize_with_anthropic(client, model: str, instruction: str, payload: str) -> dict:
     response = client.messages.create(
         model=model,
         max_tokens=8000,
@@ -103,7 +129,32 @@ def _summarize_text(client, model: str, instruction: str, payload: str) -> dict:
             }
         ],
     )
-    return _extract_json(response)
+    return _extract_json_anthropic(response)
+
+
+def _summarize_with_openai(client, model: str, instruction: str, payload: str) -> dict:
+    response = client.chat.completions.create(
+        model=model,
+        max_tokens=8000,
+        response_format={
+            "type": "json_schema",
+            "json_schema": {"name": "meeting_summary", "schema": _SCHEMA, "strict": True},
+        },
+        messages=[
+            {"role": "system", "content": _SYSTEM},
+            {"role": "user", "content": f"{instruction}\n\n<<<\n{payload}\n>>>"},
+        ],
+    )
+    text = response.choices[0].message.content
+    if text is None:
+        raise RuntimeError("OpenAI returned no content for the summary.")
+    return json.loads(text)
+
+
+def _summarize_text(provider: str, client, model: str, instruction: str, payload: str) -> dict:
+    if provider == "openai":
+        return _summarize_with_openai(client, model, instruction, payload)
+    return _summarize_with_anthropic(client, model, instruction, payload)
 
 
 def _chunk_words(text: str, size: int) -> list[str]:
@@ -115,23 +166,22 @@ def _chunk_words(text: str, size: int) -> list[str]:
 
 def summarize_transcript(transcript: str, *, log=print) -> dict:
     """Summarize a transcript string into the structured dict."""
-    client = _client()
-    model = config.summary_model()
+    provider, client, model = _client_and_model()
 
     chunks = _chunk_words(transcript, WORD_CHUNK)
     if len(chunks) == 1:
         log(f"Summarizing with {model}…")
-        return _summarize_text(client, model, _CHUNK_INSTR, chunks[0])
+        return _summarize_text(provider, client, model, _CHUNK_INSTR, chunks[0])
 
     log(f"Transcript is long; summarizing in {len(chunks)} chunks with {model}…")
     partials = []
     for i, chunk in enumerate(chunks, 1):
         log(f"  chunk {i}/{len(chunks)}…")
-        partials.append(_summarize_text(client, model, _CHUNK_INSTR, chunk))
+        partials.append(_summarize_text(provider, client, model, _CHUNK_INSTR, chunk))
 
     log("Synthesizing final summary…")
     merged_payload = json.dumps(partials, ensure_ascii=False, indent=2)
-    return _summarize_text(client, model, _FINAL_INSTR, merged_payload)
+    return _summarize_text(provider, client, model, _FINAL_INSTR, merged_payload)
 
 
 def _to_markdown(summary: dict) -> str:

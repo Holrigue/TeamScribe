@@ -56,23 +56,42 @@ def _heuristic_slug(transcript: str) -> str:
     return slugify(" ".join(top)) if top else "reunion"
 
 
-def _claude_slug(transcript: str) -> str | None:
+_TITLE_PROMPT = (
+    "Tu donnes un titre très court (3 à 5 mots, sans ponctuation, "
+    "en français) qui résume le sujet principal d'un extrait de "
+    "réunion. Réponds uniquement avec le titre, rien d'autre."
+)
+
+
+def _llm_slug(transcript: str) -> str | None:
+    snippet = " ".join(transcript.split()[:800])
+    if not snippet.strip():
+        return None
     try:
+        if config.llm_provider() == "openai":
+            import openai
+
+            config.require_env("OPENAI_API_KEY")
+            client = openai.OpenAI(timeout=30.0)
+            response = client.chat.completions.create(
+                model=config.openai_model(),
+                max_tokens=30,
+                messages=[
+                    {"role": "system", "content": _TITLE_PROMPT},
+                    {"role": "user", "content": snippet},
+                ],
+            )
+            text = response.choices[0].message.content or ""
+            return text.strip() or None
+
         import anthropic
 
         config.require_env("ANTHROPIC_API_KEY")
-        client = anthropic.Anthropic()
-        snippet = " ".join(transcript.split()[:800])
-        if not snippet.strip():
-            return None
+        client = anthropic.Anthropic(timeout=30.0)
         response = client.messages.create(
             model=config.summary_model(),
             max_tokens=30,
-            system=(
-                "Tu donnes un titre très court (3 à 5 mots, sans ponctuation, "
-                "en français) qui résume le sujet principal d'un extrait de "
-                "réunion. Réponds uniquement avec le titre, rien d'autre."
-            ),
+            system=_TITLE_PROMPT,
             messages=[{"role": "user", "content": snippet}],
         )
         text = next((b.text for b in response.content if b.type == "text"), "")
@@ -82,10 +101,11 @@ def _claude_slug(transcript: str) -> str | None:
 
 
 def derive_slug(transcript: str) -> str:
-    """Best-effort short slug: Claude if available, else local heuristic."""
+    """Best-effort short slug: the configured LLM if available, else a
+    local heuristic that needs no API access."""
     if not transcript.strip():
         return "reunion"
-    title = _claude_slug(transcript)
+    title = _llm_slug(transcript)
     if title:
         return slugify(title)
     return _heuristic_slug(transcript)

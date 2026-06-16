@@ -21,8 +21,16 @@ import threading
 import webbrowser
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QPoint, Qt, QThread, Signal
-from PySide6.QtGui import QGuiApplication, QIcon, QKeyEvent, QMouseEvent
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, QSize, Qt, QThread, Signal
+from PySide6.QtGui import (
+    QColor,
+    QGuiApplication,
+    QIcon,
+    QKeyEvent,
+    QMouseEvent,
+    QPainter,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -57,9 +65,10 @@ class RecordWorker(QThread):
     finished_ok = Signal(Path)
     failed = Signal(str)
 
-    def __init__(self, do_summarize: bool):
+    def __init__(self, do_summarize: bool, keep_audio: bool = True):
         super().__init__()
         self.do_summarize = do_summarize
+        self.keep_audio = keep_audio
         self.stop_event = threading.Event()
         self._shown_info = False
 
@@ -86,6 +95,14 @@ class RecordWorker(QThread):
                 stop_event=self.stop_event,
             )
             result = transcribe.transcribe(audio_path, session, log=lambda *_: None)
+            if not self.keep_audio:
+                # Privacy mode: the transcript is already saved, so the raw
+                # audio is no longer needed and is removed immediately
+                # rather than ever touching naming.finalize_session's rename.
+                try:
+                    audio_path.unlink()
+                except OSError:
+                    pass
             if self.do_summarize:
                 try:
                     summarize_mod.summarize_session(session, log=lambda *_: None)
@@ -98,6 +115,81 @@ class RecordWorker(QThread):
             self.finished_ok.emit(session)
         except Exception as exc:
             self.failed.emit(str(exc))
+
+
+# --------------------------------------------------------------------------
+# Hand-drawn icons
+#
+# Emoji glyphs (gear, nut-and-bolt...) render inconsistently across Windows
+# font/emoji-font configurations — sometimes falling back to an unrelated
+# "tofu" placeholder box. Drawing the few icons we need ourselves with
+# QPainter sidesteps that entirely: identical, recognizable pixels on every
+# machine regardless of installed fonts.
+# --------------------------------------------------------------------------
+
+def _gear_icon(color: str = "#9aa0a6", size: int = 18) -> QIcon:
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor(color))
+
+    center = size / 2
+    outer_r = size * 0.36
+    inner_r = size * 0.16
+    tooth_w = size * 0.16
+    tooth_len = size * 0.14
+
+    for i in range(8):
+        painter.save()
+        painter.translate(center, center)
+        painter.rotate(i * 45)
+        painter.drawRect(QRectF(-tooth_w / 2, -outer_r - tooth_len, tooth_w, tooth_len))
+        painter.restore()
+    painter.drawEllipse(QPointF(center, center), outer_r, outer_r)
+
+    # Punch a transparent hole in the middle so it reads as a gear, not a
+    # solid blob — works on any background since it's true transparency.
+    painter.setCompositionMode(QPainter.CompositionMode_Clear)
+    painter.drawEllipse(QPointF(center, center), inner_r, inner_r)
+    painter.end()
+    return QIcon(pixmap)
+
+
+class _GripDots(QSizeGrip):
+    """A QSizeGrip that paints a clear diagonal dot pattern.
+
+    The base QSizeGrip's native paint is theme/style dependent and got
+    fully hidden by our background-color stylesheet, leaving a plain flat
+    square with no visual hint that it's a resize handle. Painting our own
+    dots makes the affordance obvious in both themes.
+    """
+
+    def __init__(self, parent, color: str):
+        super().__init__(parent)
+        self._color = QColor(color)
+
+    def set_color(self, color: str) -> None:
+        self._color = QColor(color)
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(self._color)
+        size = min(self.width(), self.height())
+        dot = max(2, size // 7)
+        gap = dot + 2
+        for row in range(3):
+            for col in range(3):
+                if col + row < 2:
+                    continue  # only the lower-right diagonal half
+                cx = size - 3 - col * gap
+                cy = size - 3 - row * gap
+                painter.drawEllipse(QPointF(cx, cy), dot / 2, dot / 2)
+        painter.end()
 
 
 class UpdateCheckWorker(QThread):
@@ -415,7 +507,6 @@ class TeamScribeWidget(QWidget):
                 "QPushButton:hover { background: #e6e6e6; }"
                 "QPushButton:disabled { color: #999; }"
                 "QListWidget { background: #ffffff; color: #1e1e1e; border: 1px solid #ccc; }"
-                "QSizeGrip { background: #c8c8c8; border: 1px solid #999; border-radius: 3px; }"
             )
         root_bg = f"rgba(30, 30, 30, {alpha:.0f})"
         return (
@@ -426,13 +517,13 @@ class TeamScribeWidget(QWidget):
             "QPushButton:hover { background: #3a3a3a; }"
             "QPushButton:disabled { color: #777; }"
             "QListWidget { background: #181818; color: #d0d0d0; border: 1px solid #333; }"
-            "QSizeGrip { background: #555555; border: 1px solid #777; border-radius: 3px; }"
         )
 
     def _apply_theme(self) -> None:
         theme = self.settings.get("theme", "dark")
         glass_opacity = self.settings.get("glass_opacity", 100)
         self.root_frame.setStyleSheet(self._stylesheet(theme, glass_opacity))
+        self.size_grip.set_color("#888888" if theme == "light" else "#aaaaaa")
 
     def _build_ui(self) -> None:
         root = QFrame(self)
@@ -457,9 +548,10 @@ class TeamScribeWidget(QWidget):
         self.pin_btn.setCheckable(True)
         self.pin_btn.setToolTip(tr("pin_tooltip_off", self.lang))
         self.pin_btn.toggled.connect(self.set_pinned)
-        self.settings_btn = QPushButton("⚙️")
+        self.settings_btn = QPushButton()
+        self.settings_btn.setIcon(_gear_icon(size=18))
+        self.settings_btn.setIconSize(QSize(18, 18))
         self.settings_btn.setFixedSize(24, 24)
-        self.settings_btn.setStyleSheet("font-size: 15px;")
         self.settings_btn.setToolTip(tr("settings_tooltip", self.lang))
         self.settings_btn.clicked.connect(self.open_settings)
         self.update_badge = QLabel(self.settings_btn)
@@ -488,6 +580,17 @@ class TeamScribeWidget(QWidget):
         self.status_label = QLabel(tr("status_ready", self.lang))
         self.status_label.setStyleSheet("color: #999;")
         layout.addWidget(self.status_label)
+
+        # Mic privacy toggle: when "on" (audio not kept), only the text
+        # transcript is saved and the raw recording is deleted right after
+        # transcription, for people who'd rather not keep audio at all.
+        self.mic_btn = QPushButton(tr("mic_audio_kept", self.lang))
+        self.mic_btn.setCheckable(True)
+        self.mic_btn.setChecked(not self.settings.get("keep_audio", True))
+        self.mic_btn.setToolTip(tr("mic_tooltip_off", self.lang))
+        self.mic_btn.toggled.connect(self.set_keep_audio)
+        layout.addWidget(self.mic_btn)
+        self.set_keep_audio(self.mic_btn.isChecked())
 
         # Record button
         self.record_btn = QPushButton(tr("record_start", self.lang))
@@ -524,10 +627,11 @@ class TeamScribeWidget(QWidget):
 
         # Frameless windows have no native resize border, so a visible grip
         # in the corner is what lets the user actually resize the widget.
-        # Native QSizeGrip painting is theme-dependent and was nearly
-        # invisible (and hard to grab) against the light theme's background
-        # — give it an explicit, theme-aware style so it's always findable.
-        self.size_grip = QSizeGrip(self)
+        # Native QSizeGrip painting is theme/style dependent (and was nearly
+        # invisible against the light theme); _GripDots draws an explicit
+        # diagonal dot pattern instead, so the resize handle always looks
+        # like one regardless of theme.
+        self.size_grip = _GripDots(self, "#999999")
         self.size_grip.setFixedSize(16, 16)
         grip_row = QHBoxLayout()
         grip_row.addStretch()
@@ -557,6 +661,22 @@ class TeamScribeWidget(QWidget):
             tr("pin_tooltip_on", self.lang) if pinned else tr("pin_tooltip_off", self.lang)
         )
         self.settings["pinned"] = pinned
+        config.save_gui_settings(self.settings)
+
+    def set_keep_audio(self, privacy_on: bool) -> None:
+        keep_audio = not privacy_on
+        if privacy_on:
+            self.mic_btn.setText(tr("mic_audio_not_kept", self.lang))
+            self.mic_btn.setStyleSheet(
+                "background: #1565c0; color: white; border: 1px solid #1e88e5;"
+                " border-radius: 4px; padding: 6px;"
+            )
+            self.mic_btn.setToolTip(tr("mic_tooltip_on", self.lang))
+        else:
+            self.mic_btn.setText(tr("mic_audio_kept", self.lang))
+            self.mic_btn.setStyleSheet("")
+            self.mic_btn.setToolTip(tr("mic_tooltip_off", self.lang))
+        self.settings["keep_audio"] = keep_audio
         config.save_gui_settings(self.settings)
 
     # -- settings --------------------------------------------------
@@ -744,7 +864,8 @@ class TeamScribeWidget(QWidget):
             return
 
         self._record_worker = RecordWorker(
-            do_summarize=self.settings.get("auto_summarize", True)
+            do_summarize=self.settings.get("auto_summarize", True),
+            keep_audio=self.settings.get("keep_audio", True),
         )
         self._record_worker.tick.connect(self._on_tick)
         self._record_worker.info.connect(self._on_info)

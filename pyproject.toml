@@ -19,7 +19,8 @@ dependencies = [
     "faster-whisper>=1.0.0",    # CTranslate2 Whisper, GPU auto-detect + CPU fallback
     "numpy>=1.24",
     "scipy>=1.10",              # high-quality resampling to 16 kHz
-    "anthropic>=0.40",          # summarization via Claude
+    "anthropic>=0.40",          # summarization via Claude (default LLM backend)
+    "openai>=1.40",             # optional summarization backend (TEAMSCRIBE_LLM_PROVIDER=openai)
     "msal>=1.28",               # Microsoft auth (device code flow)
     "requests>=2.31",           # Microsoft Graph REST calls
     "typer>=0.12",              # CLI
