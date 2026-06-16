@@ -43,7 +43,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import config, shortcuts
+from . import config, shortcuts, update
 
 
 # --------------------------------------------------------------------------
@@ -97,6 +97,15 @@ class RecordWorker(QThread):
             self.finished_ok.emit(session)
         except Exception as exc:
             self.failed.emit(str(exc))
+
+
+class UpdateCheckWorker(QThread):
+    """Runs update.check_for_update() off the UI thread; never raises."""
+
+    checked = Signal(dict)
+
+    def run(self) -> None:
+        self.checked.emit(update.check_for_update())
 
 
 class TaskWorker(QThread):
@@ -173,6 +182,19 @@ class SettingsDialog(QDialog):
         devices_btn.clicked.connect(self._run_selftest)
         layout.addWidget(devices_btn)
 
+        layout.addWidget(QLabel("Mise à jour :"))
+        self.update_status_label = QLabel("…")
+        layout.addWidget(self.update_status_label)
+        update_row = QHBoxLayout()
+        check_update_btn = QPushButton("Vérifier maintenant")
+        check_update_btn.clicked.connect(self._check_update_now)
+        self.apply_update_btn = QPushButton("Mettre à jour")
+        self.apply_update_btn.clicked.connect(self._apply_update_now)
+        update_row.addWidget(check_update_btn)
+        update_row.addWidget(self.apply_update_btn)
+        layout.addLayout(update_row)
+        self._refresh_update_status((parent._update_info if parent else None) or {})
+
         buttons_row = QHBoxLayout()
         save_btn = QPushButton("Enregistrer")
         save_btn.clicked.connect(self.accept)
@@ -186,6 +208,62 @@ class SettingsDialog(QDialog):
         kofi_label.setOpenExternalLinks(True)
         kofi_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(kofi_label)
+
+    def _refresh_update_status(self, info: dict) -> None:
+        if info.get("error") == "not-a-git-checkout":
+            self.update_status_label.setText("Vérification indisponible (projet non cloné via git).")
+            self.apply_update_btn.setEnabled(False)
+        elif info.get("error"):
+            self.update_status_label.setText(f"Vérification impossible : {info['error']}")
+            self.apply_update_btn.setEnabled(False)
+        elif info.get("available"):
+            behind = info.get("behind", 0)
+            self.update_status_label.setText(f"Une mise à jour est disponible ({behind} commit(s)).")
+            self.apply_update_btn.setEnabled(True)
+        else:
+            self.update_status_label.setText("TeamScribe est à jour.")
+            self.apply_update_btn.setEnabled(False)
+
+    def _check_update_now(self) -> None:
+        self.update_status_label.setText("Vérification…")
+        QApplication.processEvents()
+        info = update.check_for_update()
+        parent = self.parent()
+        if parent is not None:
+            parent._update_info = info
+            parent.update_badge.setVisible(bool(info.get("available")))
+        self._refresh_update_status(info)
+
+    def _apply_update_now(self) -> None:
+        confirm = QMessageBox.question(
+            self, "Mettre à jour",
+            "Télécharger et installer la dernière version de TeamScribe ?\n"
+            "L'application devra être redémarrée après.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        self.apply_update_btn.setEnabled(False)
+        self.update_status_label.setText("Mise à jour en cours…")
+        QApplication.processEvents()
+        try:
+            update.apply_update(log=lambda msg: (
+                self.update_status_label.setText(msg), QApplication.processEvents()
+            ))
+        except Exception as exc:
+            QMessageBox.warning(self, "TeamScribe", f"Échec de la mise à jour :\n{exc}")
+            self._refresh_update_status(update.check_for_update())
+            return
+        self.update_status_label.setText("Mise à jour terminée. Redémarrage nécessaire.")
+        if QMessageBox.question(
+            self, "Redémarrer",
+            "Redémarrer TeamScribe maintenant pour appliquer la mise à jour ?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
+        ) == QMessageBox.Yes:
+            parent = self.parent()
+            self.reject()
+            if parent is not None:
+                parent.restart_app()
 
     def _update_glass_label(self, value: int) -> None:
         self.glass_label.setText(f"Effet verre liquide (transparence) : {value}%")
@@ -251,6 +329,8 @@ class TeamScribeWidget(QWidget):
         self._pinned = False
         self._record_worker: RecordWorker | None = None
         self._task_worker: TaskWorker | None = None
+        self._update_check_worker: UpdateCheckWorker | None = None
+        self._update_info: dict = {"available": False}
         self.settings = config.load_gui_settings()
 
         self._build_ui()
@@ -259,6 +339,7 @@ class TeamScribeWidget(QWidget):
         self.pin_btn.setChecked(self.settings.get("pinned", False))
         self._restore_position()
         self.refresh_sessions()
+        self.check_for_update()
 
     # -- position memory --------------------------------------------------
 
@@ -312,6 +393,7 @@ class TeamScribeWidget(QWidget):
                 "QPushButton:hover { background: #e6e6e6; }"
                 "QPushButton:disabled { color: #999; }"
                 "QListWidget { background: #ffffff; color: #1e1e1e; border: 1px solid #ccc; }"
+                "QSizeGrip { background: #c8c8c8; border: 1px solid #999; border-radius: 3px; }"
             )
         root_bg = f"rgba(30, 30, 30, {alpha:.0f})"
         return (
@@ -322,6 +404,7 @@ class TeamScribeWidget(QWidget):
             "QPushButton:hover { background: #3a3a3a; }"
             "QPushButton:disabled { color: #777; }"
             "QListWidget { background: #181818; color: #d0d0d0; border: 1px solid #333; }"
+            "QSizeGrip { background: #555555; border: 1px solid #777; border-radius: 3px; }"
         )
 
     def _apply_theme(self) -> None:
@@ -352,11 +435,18 @@ class TeamScribeWidget(QWidget):
         self.pin_btn.setCheckable(True)
         self.pin_btn.setToolTip("Épingler (bloquer le déplacement)")
         self.pin_btn.toggled.connect(self.set_pinned)
-        settings_btn = QPushButton("⚙️")
-        settings_btn.setFixedSize(24, 24)
-        settings_btn.setStyleSheet("font-size: 15px;")
-        settings_btn.setToolTip("Paramètres")
-        settings_btn.clicked.connect(self.open_settings)
+        self.settings_btn = QPushButton("⚙️")
+        self.settings_btn.setFixedSize(24, 24)
+        self.settings_btn.setStyleSheet("font-size: 15px;")
+        self.settings_btn.setToolTip("Paramètres")
+        self.settings_btn.clicked.connect(self.open_settings)
+        self.update_badge = QLabel(self.settings_btn)
+        self.update_badge.setFixedSize(8, 8)
+        self.update_badge.setStyleSheet(
+            "background: #e53935; border-radius: 4px; border: 1px solid #1e1e1e;"
+        )
+        self.update_badge.move(16, -1)
+        self.update_badge.hide()
         restart_btn = QPushButton("⟳")
         restart_btn.setFixedSize(22, 22)
         restart_btn.setToolTip("Redémarrer l'application")
@@ -365,7 +455,7 @@ class TeamScribeWidget(QWidget):
         close_btn.setFixedSize(22, 22)
         close_btn.clicked.connect(self.close)
         title_row.addWidget(self.pin_btn)
-        title_row.addWidget(settings_btn)
+        title_row.addWidget(self.settings_btn)
         title_row.addWidget(self.status_dot)
         title_row.addWidget(title)
         title_row.addStretch()
@@ -412,9 +502,14 @@ class TeamScribeWidget(QWidget):
 
         # Frameless windows have no native resize border, so a visible grip
         # in the corner is what lets the user actually resize the widget.
+        # Native QSizeGrip painting is theme-dependent and was nearly
+        # invisible (and hard to grab) against the light theme's background
+        # — give it an explicit, theme-aware style so it's always findable.
+        self.size_grip = QSizeGrip(self)
+        self.size_grip.setFixedSize(16, 16)
         grip_row = QHBoxLayout()
         grip_row.addStretch()
-        grip_row.addWidget(QSizeGrip(self), 0, Qt.AlignBottom | Qt.AlignRight)
+        grip_row.addWidget(self.size_grip, 0, Qt.AlignBottom | Qt.AlignRight)
         layout.addLayout(grip_row)
 
         self.setMinimumSize(240, 320)
@@ -473,6 +568,20 @@ class TeamScribeWidget(QWidget):
         exe = str(pythonw) if pythonw.is_file() else str(python)
         subprocess.Popen([exe, "-m", "teamscribe.cli", "gui"], cwd=str(config.ROOT))
         QApplication.quit()
+
+    # -- updates --------------------------------------------------
+
+    def check_for_update(self) -> None:
+        if self._update_check_worker is not None:
+            return
+        self._update_check_worker = UpdateCheckWorker()
+        self._update_check_worker.checked.connect(self._on_update_checked)
+        self._update_check_worker.start()
+
+    def _on_update_checked(self, info: dict) -> None:
+        self._update_check_worker = None
+        self._update_info = info or {"available": False}
+        self.update_badge.setVisible(bool(self._update_info.get("available")))
 
     # -- sessions list --------------------------------------------------
 
