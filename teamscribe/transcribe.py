@@ -97,6 +97,31 @@ def _select_device(preference: str) -> tuple[str, str]:
     return "cpu", "int8"
 
 
+# Module-level cache: (model_name, device, compute_type) -> WhisperModel.
+# Loading the model from disk takes several seconds; keeping it resident
+# means the second and subsequent transcriptions start immediately.
+_model_cache: dict[tuple[str, str, str], object] = {}
+
+
+def _get_model(model_name: str, device: str, compute_type: str):
+    key = (model_name, device, compute_type)
+    if key not in _model_cache:
+        from faster_whisper import WhisperModel
+        _model_cache[key] = WhisperModel(model_name, device=device, compute_type=compute_type)
+    return _model_cache[key]
+
+
+def warmup_model() -> None:
+    """Load the Whisper model into the cache without transcribing anything.
+
+    Call this at app startup (off the UI thread) so the model is already
+    resident in memory by the time the user stops their first recording.
+    """
+    model_name = config.whisper_model()
+    device, compute_type = _select_device(config.device_preference())
+    _get_model(model_name, device, compute_type)
+
+
 def transcribe(
     audio_path: Path,
     out_dir: Path | None = None,
@@ -108,8 +133,6 @@ def transcribe(
     Returns a dict with keys: ``text``, ``segments`` (list of Segment dicts),
     ``language``, ``duration``.
     """
-    from faster_whisper import WhisperModel
-
     audio_path = Path(audio_path)
     out_dir = Path(out_dir) if out_dir else audio_path.parent
 
@@ -118,7 +141,7 @@ def transcribe(
 
     def _run(device: str, compute_type: str) -> list[Segment]:
         log(f"Loading faster-whisper '{model_name}' on {device} ({compute_type})…")
-        model = WhisperModel(model_name, device=device, compute_type=compute_type)
+        model = _get_model(model_name, device, compute_type)
         log("Transcribing (French, VAD filter on)…")
         segments_iter, info = model.transcribe(
             str(audio_path),

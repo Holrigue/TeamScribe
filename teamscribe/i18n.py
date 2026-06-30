@@ -30,6 +30,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": '<a href="https://ko-fi.com/gabrielhoule">☕ Support TeamScribe on Ko-fi</a>',
         "fr": '<a href="https://ko-fi.com/gabrielhoule">☕ Soutenir TeamScribe sur Ko-fi</a>',
     },
+    "version_label": {"en": "Version {version}", "fr": "Version {version}"},
     "language_label": {"en": "Language:", "fr": "Langue :"},
     "language_restart_note": {
         "en": "Changing language takes effect after a restart.",
@@ -75,6 +76,8 @@ _STRINGS: dict[str, dict[str, str]] = {
     "pin_tooltip_on": {"en": "Unpin (allow moving)", "fr": "Désépingler (autoriser le déplacement)"},
     "settings_tooltip": {"en": "Settings", "fr": "Paramètres"},
     "restart_tooltip": {"en": "Restart the app", "fr": "Redémarrer l'application"},
+    "minimize_tooltip_expand": {"en": "Expand widget", "fr": "Agrandir le widget"},
+    "minimize_tooltip_collapse": {"en": "Collapse to title bar", "fr": "Réduire à la barre de titre"},
     "status_ready": {"en": "Ready", "fr": "Prêt"},
     "record_start": {"en": "● Start recording", "fr": "● Démarrer l'enregistrement"},
     "mic_audio_kept": {"en": "🎙️ Audio kept", "fr": "🎙️ Audio conservé"},
@@ -96,6 +99,10 @@ _STRINGS: dict[str, dict[str, str]] = {
 
     # Recording status
     "stopping": {"en": "Stopping…", "fr": "Arrêt en cours…"},
+    "phase_transcribing": {"en": "Transcribing audio…", "fr": "Transcription audio…"},
+    "phase_summarizing": {"en": "Summarizing…", "fr": "Résumé en cours…"},
+    "phase_saving": {"en": "Saving…", "fr": "Sauvegarde…"},
+    "settings_loading": {"en": "Loading…", "fr": "Chargement…"},
     "listening": {"en": "Listening… {time}", "fr": "À l'écoute… {time}"},
     "record_done": {"en": "Done: {name}", "fr": "Terminé : {name}"},
     "error": {"en": "Error", "fr": "Erreur"},
@@ -132,6 +139,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "fr": "Pas de summary.json — fais 'Résumer' d'abord.",
     },
     "sending_to_planner": {"en": "Sending to Planner…", "fr": "Envoi vers Planner…"},
+    "formatting_then_pushing": {"en": "Formatting notes then pushing to Planner…", "fr": "Mise en forme des notes puis envoi vers Planner…"},
     "tasks_pushed": {"en": "Tasks pushed", "fr": "Tâches poussées"},
     "no_actions_to_push": {"en": "No actions to push.", "fr": "Aucune action à pousser."},
     "planner_task_notes": {"en": "Created by TeamScribe ({name}).", "fr": "Créé par TeamScribe ({name})."},

@@ -300,6 +300,27 @@ def push_tasks(
 
 
 @app.command()
+def update():
+    """Check for updates and apply them if available."""
+    from . import update as update_mod
+
+    info = update_mod.check_for_update()
+    if info["error"]:
+        console.print(f"[red]Impossible de vérifier les mises à jour :[/red] {info['error']}")
+        raise typer.Exit(1)
+    if not info["available"]:
+        console.print("[green]TeamScribe est à jour.[/green]")
+        return
+    console.print(f"[yellow]{info['behind']} commit(s) disponible(s).[/yellow] Mise à jour en cours…")
+    try:
+        update_mod.apply_update(log=console.print)
+        console.print("[bold green]Mise à jour terminée. Relance l'app pour utiliser la nouvelle version.[/bold green]")
+    except RuntimeError as exc:
+        console.print(f"[red]Erreur :[/red] {exc}")
+        raise typer.Exit(1)
+
+
+@app.command()
 def gui():
     """Launch the desktop widget (start/stop recording, browse sessions)."""
     from . import gui as gui_mod

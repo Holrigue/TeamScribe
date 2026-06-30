@@ -8,4 +8,4 @@ The pipeline is three stages, each runnable on its own from the CLI:
     3. push-tasks  -> planner.py      (Microsoft Graph)
 """
 
-__version__ = "0.1.0"
+__version__ = "2.0.0"

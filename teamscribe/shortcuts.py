@@ -24,17 +24,24 @@ def _python_target() -> Path:
     return pythonw if pythonw.is_file() else exe
 
 
+_folder_cache: dict[str, Path] = {}
+
+
 def _known_folder(name: str) -> Path:
     # Don't assume standard %USERPROFILE% paths: OneDrive Known Folder Move
     # (common in managed/business OneDrive setups, as here) can redirect
     # Desktop/Startup elsewhere (e.g. "...\OneDrive - <tenant>\Bureau").
     # Ask Windows for the real path instead of hardcoding one.
-    result = subprocess.run(
-        ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-         f"[Environment]::GetFolderPath('{name}')"],
-        check=True, capture_output=True, text=True,
-    )
-    return Path(result.stdout.strip())
+    # Cache the result: spawning PowerShell takes ~300 ms and the folder
+    # paths never change during a session.
+    if name not in _folder_cache:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+             f"[Environment]::GetFolderPath('{name}')"],
+            check=True, capture_output=True, text=True,
+        )
+        _folder_cache[name] = Path(result.stdout.strip())
+    return _folder_cache[name]
 
 
 def _startup_folder() -> Path:

@@ -62,6 +62,7 @@ from .i18n import tr
 class RecordWorker(QThread):
     tick = Signal(float)
     info = Signal(str, str)
+    phase = Signal(str)   # "transcribing" | "summarizing" | "saving"
     finished_ok = Signal(Path)
     failed = Signal(str)
 
@@ -94,6 +95,7 @@ class RecordWorker(QThread):
                 on_tick=on_tick,
                 stop_event=self.stop_event,
             )
+            self.phase.emit("transcribing")
             result = transcribe.transcribe(audio_path, session, log=lambda *_: None)
             if not self.keep_audio:
                 # Privacy mode: the transcript is already saved, so the raw
@@ -105,12 +107,14 @@ class RecordWorker(QThread):
                     pass
             if self.do_summarize:
                 try:
+                    self.phase.emit("summarizing")
                     summarize_mod.summarize_session(session, log=lambda *_: None)
                 except Exception:
                     pass  # summary is best-effort; recording still succeeded
 
             from . import naming
 
+            self.phase.emit("saving")
             session = naming.finalize_session(session, result["text"], log=lambda *_: None)
             self.finished_ok.emit(session)
         except Exception as exc:
@@ -321,6 +325,12 @@ class SettingsDialog(QDialog):
         kofi_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(kofi_label)
 
+        from . import __version__
+        version_label = QLabel(tr("version_label", self.lang, version=__version__))
+        version_label.setStyleSheet("color: #888; font-size: 11px;")
+        version_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(version_label)
+
     def _refresh_update_status(self, info: dict) -> None:
         if info.get("error") == "not-a-git-checkout":
             self.update_status_label.setText(tr("update_check_unavailable", self.lang))
@@ -440,6 +450,8 @@ class TeamScribeWidget(QWidget):
 
         self._drag_offset = None
         self._pinned = False
+        self._minimized = False
+        self._expanded_size: QSize | None = None
         self._record_worker: RecordWorker | None = None
         self._task_worker: TaskWorker | None = None
         self._update_check_worker: UpdateCheckWorker | None = None
@@ -454,6 +466,10 @@ class TeamScribeWidget(QWidget):
         self._restore_position()
         self.refresh_sessions()
         self.check_for_update()
+        self._prefetch_shortcuts()
+        self._prefetch_whisper()
+        if self.settings.get("minimized", False):
+            self._set_minimized(True, save=False)
 
     # -- position memory --------------------------------------------------
 
@@ -565,21 +581,40 @@ class TeamScribeWidget(QWidget):
         restart_btn.setFixedSize(22, 22)
         restart_btn.setToolTip(tr("restart_tooltip", self.lang))
         restart_btn.clicked.connect(self.restart_app)
+        self.minimize_btn = QPushButton("▼")
+        self.minimize_btn.setFixedSize(22, 22)
+        self.minimize_btn.setToolTip(tr("minimize_tooltip_collapse", self.lang))
+        self.minimize_btn.clicked.connect(self.toggle_minimize)
         close_btn = QPushButton("×")
         close_btn.setFixedSize(22, 22)
         close_btn.clicked.connect(self.close)
+        self.mini_record_btn = QPushButton("●")
+        self.mini_record_btn.setFixedSize(22, 22)
+        self.mini_record_btn.setToolTip(tr("record_start", self.lang))
+        self.mini_record_btn.clicked.connect(self.toggle_recording)
+        self.mini_record_btn.hide()
+        self._set_mini_record_btn_color(recording=False)
+
         title_row.addWidget(self.pin_btn)
         title_row.addWidget(self.settings_btn)
         title_row.addWidget(self.status_dot)
         title_row.addWidget(title)
         title_row.addStretch()
+        title_row.addWidget(self.mini_record_btn)
         title_row.addWidget(restart_btn)
+        title_row.addWidget(self.minimize_btn)
         title_row.addWidget(close_btn)
         layout.addLayout(title_row)
 
+        # Collapsible content — everything below the title bar is wrapped in
+        # a single widget so toggle_minimize() can show/hide it in one call.
+        self.content_widget = QWidget()
+        content_layout = QVBoxLayout(self.content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+
         self.status_label = QLabel(tr("status_ready", self.lang))
         self.status_label.setStyleSheet("color: #999;")
-        layout.addWidget(self.status_label)
+        content_layout.addWidget(self.status_label)
 
         # Mic privacy toggle: when "on" (audio not kept), only the text
         # transcript is saved and the raw recording is deleted right after
@@ -589,23 +624,23 @@ class TeamScribeWidget(QWidget):
         self.mic_btn.setChecked(not self.settings.get("keep_audio", True))
         self.mic_btn.setToolTip(tr("mic_tooltip_off", self.lang))
         self.mic_btn.toggled.connect(self.set_keep_audio)
-        layout.addWidget(self.mic_btn)
+        content_layout.addWidget(self.mic_btn)
         self.set_keep_audio(self.mic_btn.isChecked())
 
         # Record button
         self.record_btn = QPushButton(tr("record_start", self.lang))
         self.record_btn.clicked.connect(self.toggle_recording)
         self._set_record_btn_color(recording=False)
-        layout.addWidget(self.record_btn)
+        content_layout.addWidget(self.record_btn)
 
-        layout.addWidget(QLabel(tr("recent_sessions", self.lang)))
+        content_layout.addWidget(QLabel(tr("recent_sessions", self.lang)))
         self.session_list = QListWidget()
         self.session_list.setSelectionMode(QListWidget.ExtendedSelection)
         self.session_list.itemDoubleClicked.connect(self._open_session_folder)
         self.session_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.session_list.customContextMenuRequested.connect(self._show_session_menu)
         self.session_list.installEventFilter(self)
-        layout.addWidget(self.session_list)
+        content_layout.addWidget(self.session_list)
 
         actions_row = QHBoxLayout()
         self.summarize_btn = QPushButton(tr("summarize_btn", self.lang))
@@ -614,7 +649,7 @@ class TeamScribeWidget(QWidget):
         self.push_btn.clicked.connect(self.run_push_tasks)
         actions_row.addWidget(self.summarize_btn)
         actions_row.addWidget(self.push_btn)
-        layout.addLayout(actions_row)
+        content_layout.addLayout(actions_row)
 
         bottom_row = QHBoxLayout()
         refresh_btn = QPushButton(tr("refresh_list_btn", self.lang))
@@ -623,7 +658,7 @@ class TeamScribeWidget(QWidget):
         open_folder_btn.clicked.connect(self.open_sessions_folder)
         bottom_row.addWidget(refresh_btn)
         bottom_row.addWidget(open_folder_btn)
-        layout.addLayout(bottom_row)
+        content_layout.addLayout(bottom_row)
 
         # Frameless windows have no native resize border, so a visible grip
         # in the corner is what lets the user actually resize the widget.
@@ -636,8 +671,9 @@ class TeamScribeWidget(QWidget):
         grip_row = QHBoxLayout()
         grip_row.addStretch()
         grip_row.addWidget(self.size_grip, 0, Qt.AlignBottom | Qt.AlignRight)
-        layout.addLayout(grip_row)
+        content_layout.addLayout(grip_row)
 
+        layout.addWidget(self.content_widget)
         self.setMinimumSize(240, 320)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
@@ -650,6 +686,52 @@ class TeamScribeWidget(QWidget):
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         self._drag_offset = None
+
+    # -- minimize / collapse --------------------------------------------------
+
+    def toggle_minimize(self) -> None:
+        self._set_minimized(not self._minimized)
+
+    def _set_mini_record_btn_color(self, recording: bool) -> None:
+        if recording:
+            self.mini_record_btn.setText("■")
+            self.mini_record_btn.setStyleSheet(
+                "background: #c0392b; color: white; border: 1px solid #e74c3c; border-radius: 4px;"
+            )
+            self.mini_record_btn.setToolTip(tr("record_stop", self.lang))
+        else:
+            self.mini_record_btn.setText("●")
+            self.mini_record_btn.setStyleSheet(
+                "background: #2e8b3d; color: white; border: 1px solid #3fae52; border-radius: 4px;"
+            )
+            self.mini_record_btn.setToolTip(tr("record_start", self.lang))
+
+    def _set_minimized(self, minimized: bool, save: bool = True) -> None:
+        self._minimized = minimized
+        if minimized:
+            self._expanded_size = self.size()
+            self.content_widget.hide()
+            self.setMinimumSize(0, 0)
+            self.setMaximumSize(16777215, 16777215)
+            self.minimize_btn.setText("▲")
+            self.minimize_btn.setToolTip(tr("minimize_tooltip_expand", self.lang))
+            self.mini_record_btn.show()
+            # Let the layout recalculate with content hidden, then force the
+            # window to the resulting hint height.
+            QApplication.processEvents()
+            self.resize(self.width(), self.sizeHint().height())
+        else:
+            self.mini_record_btn.hide()
+            self.setMinimumSize(240, 320)
+            self.setMaximumSize(16777215, 16777215)
+            self.content_widget.show()
+            if self._expanded_size is not None:
+                self.resize(self._expanded_size)
+            self.minimize_btn.setText("▼")
+            self.minimize_btn.setToolTip(tr("minimize_tooltip_collapse", self.lang))
+        if save:
+            self.settings["minimized"] = minimized
+            config.save_gui_settings(self.settings)
 
     def set_pinned(self, pinned: bool) -> None:
         self._pinned = pinned
@@ -691,7 +773,12 @@ class TeamScribeWidget(QWidget):
             self.show()
 
     def open_settings(self) -> None:
+        self.settings_btn.setEnabled(False)
+        self.status_label.setText(tr("settings_loading", self.lang))
+        QApplication.processEvents()
         dialog = SettingsDialog(self)
+        self.settings_btn.setEnabled(True)
+        self.status_label.setText(tr("status_ready", self.lang))
         if dialog.exec() == QDialog.Accepted:
             self.settings = config.load_gui_settings()
             self._apply_always_on_top(self.settings.get("always_on_top", True))
@@ -711,6 +798,27 @@ class TeamScribeWidget(QWidget):
         QApplication.quit()
 
     # -- updates --------------------------------------------------
+
+    def _prefetch_shortcuts(self) -> None:
+        """Warm the shortcuts folder-path cache in a background thread.
+
+        The first call to shortcuts.is_startup_enabled() spawns a PowerShell
+        process (~300 ms). Doing it here at startup, off-thread, means the
+        Settings dialog opens instantly on every subsequent click.
+        """
+        import threading
+        threading.Thread(target=shortcuts.is_startup_enabled, daemon=True).start()
+
+    def _prefetch_whisper(self) -> None:
+        """Load the Whisper model into memory at startup, off the UI thread.
+
+        Model loading takes several seconds on first use. Pre-loading it here
+        means transcription starts immediately after the user stops recording,
+        instead of waiting for the model to load first.
+        """
+        import threading
+        from . import transcribe as transcribe_mod
+        threading.Thread(target=transcribe_mod.warmup_model, daemon=True).start()
 
     def check_for_update(self) -> None:
         if self._update_check_worker is not None:
@@ -860,6 +968,7 @@ class TeamScribeWidget(QWidget):
         if self._record_worker is not None:
             self.status_label.setText(tr("stopping", self.lang))
             self.record_btn.setEnabled(False)
+            self.mini_record_btn.setEnabled(False)
             self._record_worker.stop()
             return
 
@@ -869,14 +978,27 @@ class TeamScribeWidget(QWidget):
         )
         self._record_worker.tick.connect(self._on_tick)
         self._record_worker.info.connect(self._on_info)
+        self._record_worker.phase.connect(self._on_phase)
         self._record_worker.finished_ok.connect(self._on_record_done)
         self._record_worker.failed.connect(self._on_record_failed)
         self._record_worker.start()
 
         self.record_btn.setText(tr("record_stop", self.lang))
         self._set_record_btn_color(recording=True)
+        self._set_mini_record_btn_color(recording=True)
         self.status_dot.setStyleSheet("color: #e53935; font-size: 14px;")
         self.status_label.setText(tr("listening", self.lang, time="00:00:00"))
+
+    def _on_phase(self, phase: str) -> None:
+        _phase_keys = {
+            "transcribing": "phase_transcribing",
+            "summarizing": "phase_summarizing",
+            "saving": "phase_saving",
+        }
+        text = tr(_phase_keys.get(phase, phase), self.lang)
+        self.status_label.setText(text)
+        self.mini_record_btn.setToolTip(text)
+        self.mini_record_btn.setText("⟳")
 
     def _on_tick(self, elapsed: float) -> None:
         m, s = divmod(int(elapsed), 60)
@@ -889,8 +1011,10 @@ class TeamScribeWidget(QWidget):
     def _on_record_done(self, session: Path) -> None:
         self._record_worker = None
         self.record_btn.setEnabled(True)
+        self.mini_record_btn.setEnabled(True)
         self.record_btn.setText(tr("record_start", self.lang))
         self._set_record_btn_color(recording=False)
+        self._set_mini_record_btn_color(recording=False)
         self.status_dot.setStyleSheet("color: #666; font-size: 14px;")
         self.status_label.setText(tr("record_done", self.lang, name=session.name))
         self.refresh_sessions()
@@ -898,8 +1022,10 @@ class TeamScribeWidget(QWidget):
     def _on_record_failed(self, message: str) -> None:
         self._record_worker = None
         self.record_btn.setEnabled(True)
+        self.mini_record_btn.setEnabled(True)
         self.record_btn.setText(tr("record_start", self.lang))
         self._set_record_btn_color(recording=False)
+        self._set_mini_record_btn_color(recording=False)
         self.status_dot.setStyleSheet("color: #666; font-size: 14px;")
         self.status_label.setText(tr("error", self.lang))
         QMessageBox.warning(self, "TeamScribe", tr("record_failed", self.lang, error=message))
@@ -952,13 +1078,17 @@ class TeamScribeWidget(QWidget):
             return
 
         summary_path = session / "summary.json"
-        if not summary_path.is_file():
-            QMessageBox.information(self, "TeamScribe", tr("no_summary_yet", self.lang))
-            return
+        needs_summarize = not summary_path.is_file()
 
-        from . import planner
+        from . import planner, summarize as summarize_mod
 
         def fn():
+            # Auto-format locally first if no summary exists yet, so the
+            # formatted notes are always saved to disk even if Planner is
+            # unreachable.
+            if needs_summarize:
+                summarize_mod.summarize_session(session, log=lambda *_: None)
+
             summary = json.loads(summary_path.read_text(encoding="utf-8"))
             actions = summary.get("actions", [])
             if not actions:
@@ -978,7 +1108,12 @@ class TeamScribeWidget(QWidget):
                 created += 1
             return tr("planner_tasks_created", self.lang, count=created)
 
-        self._run_task(fn, tr("sending_to_planner", self.lang), tr("tasks_pushed", self.lang))
+        busy_text = (
+            tr("formatting_then_pushing", self.lang)
+            if needs_summarize
+            else tr("sending_to_planner", self.lang)
+        )
+        self._run_task(fn, busy_text, tr("tasks_pushed", self.lang))
 
 
 def main() -> None:
