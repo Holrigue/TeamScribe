@@ -28,7 +28,7 @@ meetings — available as a **desktop widget** (GUI) or a **command-line tool**.
 - **Mini record button** — record/stop button in the title bar lets you start/stop
   recording without expanding the widget.
 - **Processing feedback** — after stopping a recording, each phase is shown
-  in real time: *Transcription audio... -> Resume en cours... -> Sauvegarde...*
+  in real time: *Transcribing audio... -> Summarizing... -> Saving...*
 - **Auto-format before Planner push** — "Push to Planner" now auto-generates
   the local summary first if none exists, so formatted notes are always saved
   to disk even when Planner is unreachable.
