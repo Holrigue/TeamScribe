@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "teamscribe"
-version = "2.1.0"
+version = "2.1.2"
 description = "Capture, transcribe (French Québécois) and summarize Microsoft Teams meetings, then push action items to Microsoft Planner."
 readme = "README.md"
 requires-python = ">=3.10"

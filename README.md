@@ -9,11 +9,26 @@ meetings — available as a **desktop widget** (GUI) or a **command-line tool**.
 
 1. **Record** — capture what comes out of your speakers (the other
    participants) *and* your microphone (your voice), mixed into a single
-   16 kHz mono WAV, and transcribe it in **French (Québécois)**.
+   16 kHz mono WAV, and transcribe it in the language of your choice.
 2. **Summarize** — split and summarize the discussion into bullet points
    (topics discussed, decisions, action items) with Claude.
 3. **Push tasks** — create a Microsoft Planner task for each action item via
    the Microsoft Graph API (direct access — no Power Automate / Zapier).
+
+---
+
+## 🌐 Available in 14 languages
+
+The widget interface and audio transcription are available in **14 languages**. Switch at any time in Settings — the app restarts automatically and transcription follows the selected language. No additional download required; all languages are built into the Whisper model.
+
+| | | | |
+|---|---|---|---|
+| 🇬🇧 English | 🇫🇷 Français | 🇪🇸 Español | 🇵🇹 Português |
+| 🇩🇪 Deutsch | 🇮🇹 Italiano | 🇷🇺 Русский | 🇯🇵 日本語 |
+| 🇨🇳 中文 | 🇰🇷 한국어 | 🇮🇳 हिन्दी | 🇸🇦 العربية |
+| 🇧🇩 বাংলা | 🇵🇰 اردو | | |
+
+---
 
 > Warning: **Consent reminder.** Make sure all participants consent to being
 > recorded, per your company policy and local law, before you start a
@@ -21,11 +36,16 @@ meetings — available as a **desktop widget** (GUI) or a **command-line tool**.
 
 ---
 
+## What's new in v2.1.2
+
+- **Language switch auto-restarts the widget** — changing the language in Settings now immediately relaunches the app in the new language without any manual step. Transcription language follows automatically.
+- **Bug fix** — the restart was firing inside the dialog's event loop, causing the new instance to launch with the wrong language. Fixed by deferring the restart after the dialog fully closes.
+
 ## What's new in v2.1.0
 
 - **Privacy mode** — the "Audio kept" button is replaced by a compact **Privacy mode ON/OFF switch** in the widget. When ON (default), the raw audio file is deleted after transcription and a brief hint message confirms it. Takes up much less space in the UI.
 - **Auto-summarize replaces the Summarize button** — since summaries are now automatic after recording, the "Summarize" button has been removed from the widget. Re-summarize is still available via right-click on a session.
-- **12 new UI languages** — the widget interface is now available in: Spanish, Portuguese, German, Italian, Russian, Japanese, Mandarin Chinese, Korean, Hindi, Arabic, Bengali, and Urdu (in addition to English and French). Language is selected via a dropdown in Settings.
+- **14 UI languages** — the widget interface and transcription are now available in 14 languages. Language is selected via a dropdown in Settings.
 
 ---
 
