@@ -1,11 +1,11 @@
-<p align="center"><img src="assets/logo.png" alt="TeamScribe logo" width="160"></p>
+﻿<p align="center"><img src="assets/logo.png" alt="TeamScribe logo" width="160"></p>
 
 # TeamScribe
 
 [![ko-fi](https://img.shields.io/badge/Support%20me%20on-Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/gabrielhoule)
 
-A Windows 11 command-line tool that automates a 3-stage pipeline for your
-Microsoft Teams meetings:
+A Windows 11 tool that automates a 3-stage pipeline for your Microsoft Teams
+meetings — available as a **desktop widget** (GUI) or a **command-line tool**.
 
 1. **Record** — capture what comes out of your speakers (the other
    participants) *and* your microphone (your voice), mixed into a single
@@ -15,9 +15,28 @@ Microsoft Teams meetings:
 3. **Push tasks** — create a Microsoft Planner task for each action item via
    the Microsoft Graph API (direct access — no Power Automate / Zapier).
 
-> ⚠️ **Consent reminder.** Make sure all participants consent to being
-> recorded, per your company's policy and local law, before you start a
-> recording. TeamScribe does not enforce this technically — it's on you.
+> Warning: **Consent reminder.** Make sure all participants consent to being
+> recorded, per your company policy and local law, before you start a
+> recording. TeamScribe does not enforce this technically — it is on you.
+
+---
+
+## What's new in v2.0.0
+
+- **Minimized mode** — collapse the widget to a slim title bar (down/up toggle);
+  state is persisted so the widget reopens as you left it.
+- **Mini record button** — record/stop button in the title bar lets you start/stop
+  recording without expanding the widget.
+- **Processing feedback** — after stopping a recording, each phase is shown
+  in real time: *Transcription audio... -> Resume en cours... -> Sauvegarde...*
+- **Auto-format before Planner push** — "Push to Planner" now auto-generates
+  the local summary first if none exists, so formatted notes are always saved
+  to disk even when Planner is unreachable.
+- **Faster settings dialog** — Windows known-folder paths are cached after
+  the first lookup; the Settings dialog opens instantly on every subsequent click.
+- **Faster transcription start** — the Whisper model is pre-loaded at app
+  startup so transcription begins immediately after stopping a recording.
+- **Version number** shown in the Settings dialog.
 
 ---
 
@@ -37,7 +56,7 @@ TeamScribe is designed to install and run from a normal Windows 11 terminal
 > **Separate concern — the Azure app registration.** Creating the Entra ID
 > (Azure AD) app registration that gives you a `Client ID` is a *tenant-level*
 > action, unrelated to admin rights on your own PC. If self-service app
-> registration is disabled in your tenant, you'll need a one-off request to
+> registration is disabled in your tenant, you will need a one-off request to
 > your IT department (see [Microsoft setup](#microsoft-setup)).
 
 ---
@@ -46,13 +65,12 @@ TeamScribe is designed to install and run from a normal Windows 11 terminal
 
 ### Easiest: guided installer
 
-New to this project? Right-click **`install.ps1`** → *Run with PowerShell*.
+New to this project? Right-click **`install.ps1`** and choose *Run with PowerShell*.
 It asks for your language first (English or Français), then walks you
 through everything step by step (Python check, installing TeamScribe, your
 Anthropic key, optional Planner setup, desktop shortcut, launch-at-startup)
 and asks before doing anything — no admin rights needed. The widget itself
-defaults to English for new installs; switch it to Français anytime in its
-Settings.
+defaults to English for new installs; switch it to Français anytime in Settings.
 
 ### Manual
 
@@ -70,9 +88,9 @@ directory to PATH, e.g. `%APPDATA%\Python\Python311\Scripts`).
 
 ### GPU vs CPU transcription
 
-`faster-whisper` auto-detects an NVIDIA GPU (CUDA + `float16`) and otherwise
-falls back to CPU (`int8`). Force it with `TEAMSCRIBE_DEVICE=cuda|cpu` in
-`.env`. CUDA needs the matching cuBLAS/cuDNN runtime on your machine; if it's
+`faster-whisper` auto-detects an NVIDIA GPU (CUDA + float16) and otherwise
+falls back to CPU (int8). Force it with `TEAMSCRIBE_DEVICE=cuda|cpu` in
+`.env`. CUDA needs the matching cuBLAS/cuDNN runtime on your machine; if it is
 missing, set `TEAMSCRIBE_DEVICE=cpu`.
 
 ### Choosing an LLM provider (summarization)
@@ -95,6 +113,31 @@ either way.
 
 ## Usage
 
+### Desktop widget (recommended)
+
+```powershell
+teamscribe gui
+```
+
+The widget is a small always-on-top window with one-click recording,
+a live timer, a recent-sessions list, and buttons to summarize and push
+tasks to Planner — all without opening a terminal.
+
+**Key widget features:**
+- **Minimize** — collapse to a slim title bar; the record button stays
+  accessible so you can start/stop recording even while minimized.
+- **Pin** — lock the window position so it cannot be accidentally dragged.
+- **Audio kept / Privacy mode** — toggle whether the raw audio file is kept
+  after transcription.
+- **Summarize** — (re)generate the summary for any selected session.
+- **Push to Planner** — push action items to Microsoft Planner; if no summary
+  exists yet, one is generated automatically first so notes are always saved
+  locally even if Planner is unreachable.
+- Settings include: theme (dark/light), transparency, language (EN/FR),
+  always-on-top, launch at startup, audio check, and one-click updates.
+
+### Command line
+
 ```powershell
 # 0. (Optional) Check your audio setup before a real meeting.
 teamscribe devices     # list the speakers + mic TeamScribe will capture
@@ -103,7 +146,7 @@ teamscribe selftest    # sample loopback + mic separately, report signal levels
 # 1. Record a meeting (Ctrl+C to stop). Transcribes + summarizes on stop.
 teamscribe record
 
-# 2. (Re)summarize a session's transcript if needed.
+# 2. (Re)summarize a session transcript if needed.
 teamscribe summarize 20260616_134500      # or omit id to use the latest
 
 # 3a. One-time: choose the Planner plan + bucket to target.
@@ -134,7 +177,7 @@ Each run creates `sessions/{date}_{time}/` containing `audio.wav`,
 ```
 
 `responsable` and `echeance` are filled only when explicitly stated in the
-discussion; otherwise they're empty strings.
+discussion; otherwise they are empty strings.
 
 ---
 
@@ -142,10 +185,10 @@ discussion; otherwise they're empty strings.
 
 To push tasks you need an **Entra ID (Azure AD) app registration**:
 
-1. In the [Azure portal](https://entra.microsoft.com) → *App registrations* →
-   *New registration*. Name it (e.g. "TeamScribe"). For "Supported account
+1. In the [Azure portal](https://entra.microsoft.com) go to *App registrations*
+   then *New registration*. Name it (e.g. "TeamScribe"). For "Supported account
    types" pick your org. No redirect URI is needed.
-2. On the app's *Authentication* page, enable **Allow public client flows**
+2. On the app *Authentication* page, enable **Allow public client flows**
    (this lets the device-code login work).
 3. On *API permissions*, add **delegated** Microsoft Graph permissions:
    - `Tasks.ReadWrite`
@@ -176,8 +219,8 @@ We intentionally use the standard multilingual `large-v3-turbo` (or
 ("France") French fine-tunes perform *worse* on the Québec accent than the
 base multilingual model.
 
-If base accuracy disappoints in real use, a V2 option is LoRA fine-tuning on
-Diabolocom's Québec French telephone subset
+If base accuracy disappoints in real use, a future option is LoRA fine-tuning
+on Diabolocom's Québec French telephone subset
 ([`diabolocom/talkbank_4_stt`](https://huggingface.co/datasets/diabolocom/talkbank_4_stt)).
 
 ---
@@ -187,14 +230,20 @@ Diabolocom's Québec French telephone subset
 ```
 teamscribe/
   teamscribe/
-    __init__.py
+    __init__.py      # version
     config.py        # .env loading, session paths (no registry)
     capture.py       # PyAudioWPatch dual-stream capture -> 16 kHz mono wav
-    transcribe.py    # faster-whisper (fr, VAD, GPU/CPU autodetect)
-    summarize.py     # Anthropic API -> structured JSON + markdown
+    transcribe.py    # faster-whisper (fr, VAD, GPU/CPU autodetect, model cache)
+    summarize.py     # Anthropic/OpenAI API -> structured JSON + markdown
+    naming.py        # contextual session folder rename from transcript
     planner.py       # MSAL device-code auth + Microsoft Graph
+    gui.py           # PySide6 desktop widget (teamscribe gui)
+    i18n.py          # bilingual strings (EN/FR) for the widget
+    shortcuts.py     # Windows startup + desktop shortcut helpers (cached)
+    update.py        # git-based update check and apply
     cli.py           # Typer entry point
   sessions/          # per-meeting output (git-ignored)
+  assets/            # logo (png, svg, ico)
   .env.example
   pyproject.toml
   README.md
@@ -202,7 +251,7 @@ teamscribe/
 
 ---
 
-## Roadmap (not in V1)
+## Roadmap
 
 - Speaker diarization ("who said what") with
   [`pyannote-audio`](https://github.com/pyannote/pyannote-audio).
