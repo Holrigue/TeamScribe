@@ -439,13 +439,17 @@ class SettingsDialog(QDialog):
             )
             return
 
+        previous_lang = self.settings.get("language", "en")
         self.settings["auto_summarize"] = self.summarize_box.isChecked()
         self.settings["always_on_top"] = self.ontop_box.isChecked()
         self.settings["theme"] = "light" if self.light_radio.isChecked() else "dark"
         self.settings["glass_opacity"] = self.glass_slider.value()
         self.settings["language"] = self.lang_combo.currentData()
         config.save_gui_settings(self.settings)
+        language_changed = self.settings["language"] != previous_lang
         super().accept()
+        if language_changed and self.parent() is not None:
+            self.parent().restart_app()
 
 
 # --------------------------------------------------------------------------
