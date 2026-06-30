@@ -36,15 +36,22 @@ $T = @{
     install_failed1 = @{en = "Installation failed - copy the error message above and"; fr = "L'installation a échoué — copie le message d'erreur ci-dessus et"}
     install_failed2 = @{en = "send it to whoever shared this project with you."; fr = "envoie-le à la personne qui t'a partagé ce projet."}
     components_ok   = @{en = "Components installed."; fr = "Composants installés."}
-    step3_title     = @{en = "Step 3/6 - Anthropic key (for automatic summaries)"; fr = "Étape 3/6 — Clé Anthropic (pour les résumés automatiques)"}
-    anthropic_info1 = @{en = "TeamScribe uses Claude (Anthropic) to summarize your meetings."; fr = "TeamScribe utilise Claude (Anthropic) pour résumer tes réunions."}
-    anthropic_info2 = @{en = "You need YOUR OWN key - everyone has theirs, with their own"; fr = "Il te faut TA PROPRE clé — chaque personne a la sienne, avec ses"}
-    anthropic_info3 = @{en = "credits. You can create one at console.anthropic.com."; fr = "propres crédits. Tu peux en créer une sur console.anthropic.com."}
+    step3_title     = @{en = "Step 3/6 - AI provider (for automatic summaries)"; fr = "Étape 3/6 — Fournisseur IA (pour les résumés automatiques)"}
+    ai_choose       = @{en = "TeamScribe can use 4 different AI providers to summarize your meetings."; fr = "TeamScribe peut utiliser 4 fournisseurs IA différents pour résumer tes réunions."}
+    ai_choose2      = @{en = "Each user needs their OWN API key - keys are never shared."; fr = "Chaque utilisateur a besoin de SA PROPRE clé API — les clés ne sont jamais partagées."}
+    ai_pick         = @{en = "Which AI provider do you want to use?"; fr = "Quel fournisseur IA veux-tu utiliser ?"}
+    ai_opt1         = @{en = "  [1] Claude (Anthropic) - recommended, default"; fr = "  [1] Claude (Anthropic) — recommandé, par défaut"}
+    ai_opt2         = @{en = "  [2] ChatGPT (OpenAI)"; fr = "  [2] ChatGPT (OpenAI)"}
+    ai_opt3         = @{en = "  [3] Copilot (Azure OpenAI)"; fr = "  [3] Copilot (Azure OpenAI)"}
+    ai_opt4         = @{en = "  [4] Gemini (Google)"; fr = "  [4] Gemini (Google)"}
+    ai_get_key      = @{en = "Get your key at: {0}"; fr = "Obtiens ta clé sur : {0}"}
     open_page_now   = @{en = "Do you want me to open this page now?"; fr = "Veux-tu que j'ouvre cette page maintenant ?"}
-    paste_key       = @{en = "Paste your Anthropic key here (or leave empty to configure later)"; fr = "Colle ta clé Anthropic ici (ou laisse vide pour configurer plus tard)"}
+    paste_key       = @{en = "Paste your API key here (or leave empty to configure later)"; fr = "Colle ta clé API ici (ou laisse vide pour configurer plus tard)"}
+    azure_endpoint  = @{en = "Paste your Azure OpenAI endpoint (e.g. https://my-resource.openai.azure.com/)"; fr = "Colle ton endpoint Azure OpenAI (ex. https://my-resource.openai.azure.com/)"}
+    azure_deploy    = @{en = "Deployment name (leave empty for default: gpt-4o)"; fr = "Nom du déploiement (laisse vide pour le défaut : gpt-4o)"}
     key_saved       = @{en = "Key saved to .env (never shared on GitHub)."; fr = "Clé enregistrée dans .env (jamais partagée sur GitHub)."}
     key_later       = @{en = "OK, you can add it later by editing the .env file."; fr = "OK, tu pourras l'ajouter plus tard en éditant le fichier .env."}
-    key_already     = @{en = "An Anthropic key is already configured."; fr = "Une clé Anthropic est déjà configurée."}
+    key_already     = @{en = "An API key is already configured for this provider."; fr = "Une clé API est déjà configurée pour ce fournisseur."}
     step4_title     = @{en = "Step 4/6 - Microsoft Planner (optional)"; fr = "Étape 4/6 — Microsoft Planner (optionnel)"}
     planner_info1   = @{en = "This step is only used to automatically create Planner tasks"; fr = "Cette étape sert seulement à créer automatiquement des tâches"}
     planner_info2   = @{en = "from your meetings. It is NOT required to record and"; fr = "Planner à partir des réunions. Ce n'est PAS nécessaire pour"}
@@ -194,7 +201,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Ok (L components_ok)
 python -c "from teamscribe import config; s = config.load_gui_settings(); s['language'] = '$Lang'; config.save_gui_settings(s)"
 
-# --- 3. Clé Anthropic (résumés) ------------------------------------------
+# --- 3. Fournisseur IA (résumés) -----------------------------------------
 
 Write-Title (L step3_title)
 
@@ -202,19 +209,65 @@ if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
 }
 
-$existingKey = Get-EnvValue "ANTHROPIC_API_KEY"
-$needsKey = -not $existingKey -or $existingKey -like "sk-ant-xxx*"
+Write-Info (L ai_choose)
+Write-Info (L ai_choose2)
+Write-Host ""
+Write-Host (L ai_pick) -ForegroundColor White
+Write-Host (L ai_opt1)
+Write-Host (L ai_opt2)
+Write-Host (L ai_opt3)
+Write-Host (L ai_opt4)
+$providerChoice = Read-Host "[1/2/3/4]"
+
+$providerCode = "anthropic"
+$providerKeyEnv = "ANTHROPIC_API_KEY"
+$providerKeyUrl = "https://console.anthropic.com/settings/keys"
+$providerKeyPlaceholder = "sk-ant-xxx*"
+
+switch ($providerChoice.Trim()) {
+    "2" {
+        $providerCode = "openai"
+        $providerKeyEnv = "OPENAI_API_KEY"
+        $providerKeyUrl = "https://platform.openai.com/api-keys"
+        $providerKeyPlaceholder = "sk-xxx*"
+    }
+    "3" {
+        $providerCode = "azure_openai"
+        $providerKeyEnv = "AZURE_OPENAI_API_KEY"
+        $providerKeyUrl = "https://portal.azure.com/"
+        $providerKeyPlaceholder = ""
+    }
+    "4" {
+        $providerCode = "gemini"
+        $providerKeyEnv = "GEMINI_API_KEY"
+        $providerKeyUrl = "https://aistudio.google.com/app/apikey"
+        $providerKeyPlaceholder = ""
+    }
+}
+
+Set-EnvValue "TEAMSCRIBE_LLM_PROVIDER" $providerCode
+
+$existingKey = Get-EnvValue $providerKeyEnv
+$needsKey = -not $existingKey -or ($providerKeyPlaceholder -and $existingKey -like $providerKeyPlaceholder)
 
 if ($needsKey) {
-    Write-Info (L anthropic_info1)
-    Write-Info (L anthropic_info2)
-    Write-Info (L anthropic_info3)
+    Write-Info ((L ai_get_key) -f $providerKeyUrl)
     if (Read-YesNo (L open_page_now)) {
-        Start-Process "https://console.anthropic.com/settings/keys"
+        Start-Process $providerKeyUrl
     }
     $key = Read-Host (L paste_key)
     if (-not [string]::IsNullOrWhiteSpace($key)) {
-        Set-EnvValue "ANTHROPIC_API_KEY" $key.Trim()
+        Set-EnvValue $providerKeyEnv $key.Trim()
+        if ($providerCode -eq "azure_openai") {
+            $endpoint = Read-Host (L azure_endpoint)
+            if (-not [string]::IsNullOrWhiteSpace($endpoint)) {
+                Set-EnvValue "AZURE_OPENAI_ENDPOINT" $endpoint.Trim()
+            }
+            $deploy = Read-Host (L azure_deploy)
+            if (-not [string]::IsNullOrWhiteSpace($deploy)) {
+                Set-EnvValue "AZURE_OPENAI_DEPLOYMENT" $deploy.Trim()
+            }
+        }
         Write-Ok (L key_saved)
     } else {
         Write-Host (L key_later) -ForegroundColor Yellow
