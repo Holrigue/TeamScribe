@@ -249,6 +249,27 @@ class SettingsDialog(QDialog):
         self.ontop_box.setChecked(self.settings.get("always_on_top", True))
         layout.addWidget(self.ontop_box)
 
+        layout.addWidget(QLabel(tr("ai_provider_label", self.lang)))
+        self.provider_combo = QComboBox()
+        _PROVIDERS = [
+            ("anthropic",   "Claude (Anthropic)"),
+            ("openai",      "ChatGPT (OpenAI)"),
+            ("azure_openai","Copilot (Azure OpenAI)"),
+            ("gemini",      "Gemini (Google)"),
+        ]
+        for code, label in _PROVIDERS:
+            self.provider_combo.addItem(label, code)
+        current_provider = self.settings.get("llm_provider") or config.llm_provider()
+        provider_idx = next(
+            (i for i, (code, _) in enumerate(_PROVIDERS) if code == current_provider), 0
+        )
+        self.provider_combo.setCurrentIndex(provider_idx)
+        layout.addWidget(self.provider_combo)
+        provider_note = QLabel(tr("ai_provider_note", self.lang))
+        provider_note.setStyleSheet("color: #999; font-size: 11px;")
+        provider_note.setWordWrap(True)
+        layout.addWidget(provider_note)
+
         layout.addWidget(QLabel(tr("language_label", self.lang)))
         self.lang_combo = QComboBox()
         _LANGUAGES = [
@@ -444,6 +465,7 @@ class SettingsDialog(QDialog):
         self.settings["always_on_top"] = self.ontop_box.isChecked()
         self.settings["theme"] = "light" if self.light_radio.isChecked() else "dark"
         self.settings["glass_opacity"] = self.glass_slider.value()
+        self.settings["llm_provider"] = self.provider_combo.currentData()
         self.settings["language"] = self.lang_combo.currentData()
         config.save_gui_settings(self.settings)
         language_changed = self.settings["language"] != previous_lang

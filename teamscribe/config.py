@@ -64,9 +64,17 @@ def summary_model() -> str:
 
 
 def llm_provider() -> str:
-    """Which LLM backend powers summarize/naming: "anthropic", "openai", "azure_openai", or "gemini"."""
+    """Which LLM backend powers summarize/naming: "anthropic", "openai", "azure_openai", or "gemini".
+
+    GUI setting takes priority over the .env variable so the user can switch
+    from the widget without editing files.
+    """
+    valid = ("anthropic", "openai", "azure_openai", "gemini")
+    gui = load_gui_settings().get("llm_provider", "")
+    if gui in valid:
+        return gui
     value = (env("TEAMSCRIBE_LLM_PROVIDER", "anthropic") or "anthropic").lower()
-    return value if value in ("anthropic", "openai", "azure_openai", "gemini") else "anthropic"
+    return value if value in valid else "anthropic"
 
 
 def openai_model() -> str:
@@ -140,6 +148,7 @@ _GUI_DEFAULTS = {
     "pos_x": None,  # last on-screen position; None = not yet placed
     "pos_y": None,
     "language": "en",  # "en" or "fr"; new installs default to English
+    "llm_provider": "",  # "" = follow .env; otherwise overrides TEAMSCRIBE_LLM_PROVIDER
     "keep_audio": False,  # False = delete audio.wav after transcription (privacy mode ON by default)
 }
 

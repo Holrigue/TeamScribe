@@ -49,6 +49,10 @@ The widget interface and audio transcription are available in **14 languages**. 
 
 ---
 
+## What's new in v2.1.4
+
+- **AI provider switcher in Settings** — a new dropdown in the Settings dialog lets you switch between Claude, ChatGPT, Copilot (Azure OpenAI), and Gemini without editing any file. The choice is saved in `gui_settings.json` and takes priority over the `.env` variable.
+
 ## What's new in v2.1.3
 
 - **Gemini (Google) support** — set `TEAMSCRIBE_LLM_PROVIDER=gemini` and add your `GEMINI_API_KEY` to use Google's Gemini models (default: `gemini-1.5-flash`). Model is overridable via `TEAMSCRIBE_GEMINI_MODEL`.
