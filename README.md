@@ -11,9 +11,22 @@ meetings — available as a **desktop widget** (GUI) or a **command-line tool**.
    participants) *and* your microphone (your voice), mixed into a single
    16 kHz mono WAV, and transcribe it in the language of your choice.
 2. **Summarize** — split and summarize the discussion into bullet points
-   (topics discussed, decisions, action items) with Claude.
+   (topics discussed, decisions, action items) with the AI of your choice.
 3. **Push tasks** — create a Microsoft Planner task for each action item via
    the Microsoft Graph API (direct access — no Power Automate / Zapier).
+
+---
+
+## 🤖 Choose your AI
+
+TeamScribe supports **4 AI backends** for summarization. Each user brings their own API key — no key is ever shared or bundled with the app.
+
+| Provider | Set `TEAMSCRIBE_LLM_PROVIDER=` | Get a key |
+|---|---|---|
+| **Claude** (Anthropic) — default | `anthropic` | [console.anthropic.com](https://console.anthropic.com/) |
+| **ChatGPT** (OpenAI) | `openai` | [platform.openai.com](https://platform.openai.com/api-keys) |
+| **Copilot** (Azure OpenAI) | `azure_openai` | [portal.azure.com](https://portal.azure.com/) |
+| **Gemini** (Google) | `gemini` | [aistudio.google.com](https://aistudio.google.com/app/apikey) |
 
 ---
 
@@ -35,6 +48,12 @@ The widget interface and audio transcription are available in **14 languages**. 
 > recording. TeamScribe does not enforce this technically — it is on you.
 
 ---
+
+## What's new in v2.1.3
+
+- **Gemini (Google) support** — set `TEAMSCRIBE_LLM_PROVIDER=gemini` and add your `GEMINI_API_KEY` to use Google's Gemini models (default: `gemini-1.5-flash`). Model is overridable via `TEAMSCRIBE_GEMINI_MODEL`.
+- **Azure OpenAI / Copilot support** — set `TEAMSCRIBE_LLM_PROVIDER=azure_openai` with your `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, and deployment name to use Microsoft's hosted GPT models.
+- **`.env.example`** updated with all four providers and their configuration variables.
 
 ## What's new in v2.1.2
 

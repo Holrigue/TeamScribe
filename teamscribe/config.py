@@ -64,9 +64,9 @@ def summary_model() -> str:
 
 
 def llm_provider() -> str:
-    """Which LLM backend powers summarize/naming: "anthropic" or "openai"."""
+    """Which LLM backend powers summarize/naming: "anthropic", "openai", "azure_openai", or "gemini"."""
     value = (env("TEAMSCRIBE_LLM_PROVIDER", "anthropic") or "anthropic").lower()
-    return value if value in ("anthropic", "openai") else "anthropic"
+    return value if value in ("anthropic", "openai", "azure_openai", "gemini") else "anthropic"
 
 
 def openai_model() -> str:

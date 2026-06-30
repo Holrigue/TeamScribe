@@ -1,10 +1,11 @@
 """Summarize a meeting transcript into structured bullet points with an LLM.
 
-Supports two backends, selected via TEAMSCRIBE_LLM_PROVIDER in .env:
-"anthropic" (default, Claude) or "openai". Both are used with native
-structured-output enforcement (Anthropic's output_config.format / OpenAI's
-json_schema response_format with strict=True) so the result is always
-valid JSON matching the schema below — no manual parsing/repair needed.
+Supports four backends, selected via TEAMSCRIBE_LLM_PROVIDER in .env:
+"anthropic" (default, Claude), "openai", "gemini", or "azure_openai".
+Anthropic and OpenAI use native structured-output enforcement so the result
+is always valid JSON matching the schema below — no manual parsing/repair
+needed. Gemini uses response_mime_type + response_schema. Azure OpenAI reuses
+the OpenAI SDK pointed at the user's Azure endpoint.
 
 Output JSON shape:
 
@@ -92,17 +93,33 @@ def _client_and_model() -> tuple[str, object, str]:
     the local, git-ignored .env) and never logged or persisted elsewhere.
     """
     provider = config.llm_provider()
+
     if provider == "openai":
         import openai
-
         config.require_env("OPENAI_API_KEY")
-        # No custom base_url: this targets the official OpenAI API only,
-        # avoiding the SSRF-style risk of an attacker-controlled endpoint.
         client = openai.OpenAI(timeout=_REQUEST_TIMEOUT_S)
         return provider, client, config.openai_model()
 
-    import anthropic
+    if provider == "azure_openai":
+        import openai
+        config.require_env("AZURE_OPENAI_API_KEY")
+        client = openai.AzureOpenAI(
+            api_key=config.require_env("AZURE_OPENAI_API_KEY"),
+            azure_endpoint=config.require_env("AZURE_OPENAI_ENDPOINT"),
+            api_version=config.env("AZURE_OPENAI_API_VERSION", "2024-02-01"),
+            timeout=_REQUEST_TIMEOUT_S,
+        )
+        return provider, client, config.env("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
 
+    if provider == "gemini":
+        import google.generativeai as genai
+        config.require_env("GEMINI_API_KEY")
+        genai.configure(api_key=config.env("GEMINI_API_KEY"))
+        model_name = config.env("TEAMSCRIBE_GEMINI_MODEL", "gemini-1.5-flash")
+        client = genai.GenerativeModel(model_name)
+        return provider, client, model_name
+
+    import anthropic
     config.require_env("ANTHROPIC_API_KEY")
     client = anthropic.Anthropic(timeout=_REQUEST_TIMEOUT_S)
     return provider, client, config.summary_model()
@@ -151,9 +168,33 @@ def _summarize_with_openai(client, model: str, instruction: str, payload: str) -
     return json.loads(text)
 
 
+# Azure OpenAI uses the same SDK and wire format as OpenAI.
+_summarize_with_azure_openai = _summarize_with_openai
+
+
+def _summarize_with_gemini(client, model: str, instruction: str, payload: str) -> dict:
+    import google.generativeai as genai
+
+    generation_config = genai.GenerationConfig(
+        response_mime_type="application/json",
+        response_schema=_SCHEMA,
+        max_output_tokens=8000,
+    )
+    prompt = f"{_SYSTEM}\n\n{instruction}\n\n<<<\n{payload}\n>>>"
+    response = client.generate_content(prompt, generation_config=generation_config)
+    text = response.text
+    if not text:
+        raise RuntimeError("Gemini returned no content for the summary.")
+    return json.loads(text)
+
+
 def _summarize_text(provider: str, client, model: str, instruction: str, payload: str) -> dict:
     if provider == "openai":
         return _summarize_with_openai(client, model, instruction, payload)
+    if provider == "azure_openai":
+        return _summarize_with_azure_openai(client, model, instruction, payload)
+    if provider == "gemini":
+        return _summarize_with_gemini(client, model, instruction, payload)
     return _summarize_with_anthropic(client, model, instruction, payload)
 
 
