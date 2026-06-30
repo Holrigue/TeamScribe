@@ -105,36 +105,6 @@ By using TeamScribe, you acknowledge and agree that:
 - **Azure OpenAI / Copilot support** — set `TEAMSCRIBE_LLM_PROVIDER=azure_openai` with your `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, and deployment name to use Microsoft's hosted GPT models.
 - **`.env.example`** updated with all four providers and their configuration variables.
 
-## What's new in v2.1.2
-
-- **Language switch auto-restarts the widget** — changing the language in Settings now immediately relaunches the app in the new language without any manual step. Transcription language follows automatically.
-- **Bug fix** — the restart was firing inside the dialog's event loop, causing the new instance to launch with the wrong language. Fixed by deferring the restart after the dialog fully closes.
-
-## What's new in v2.1.0
-
-- **Privacy mode** — the "Audio kept" button is replaced by a compact **Privacy mode ON/OFF switch** in the widget. When ON (default), the raw audio file is deleted after transcription and a brief hint message confirms it. Takes up much less space in the UI.
-- **Auto-summarize replaces the Summarize button** — since summaries are now automatic after recording, the "Summarize" button has been removed from the widget. Re-summarize is still available via right-click on a session.
-- **14 UI languages** — the widget interface and transcription are now available in 14 languages. Language is selected via a dropdown in Settings.
-
----
-
-## What's new in v2.0.0
-
-- **Minimized mode** — collapse the widget to a slim title bar (down/up toggle);
-  state is persisted so the widget reopens as you left it.
-- **Mini record button** — record/stop button in the title bar lets you start/stop
-  recording without expanding the widget.
-- **Processing feedback** — after stopping a recording, each phase is shown
-  in real time: *Transcribing audio... -> Summarizing... -> Saving...*
-- **Auto-format before Planner push** — "Push to Planner" now auto-generates
-  the local summary first if none exists, so formatted notes are always saved
-  to disk even when Planner is unreachable.
-- **Faster settings dialog** — Windows known-folder paths are cached after
-  the first lookup; the Settings dialog opens instantly on every subsequent click.
-- **Faster transcription start** — the Whisper model is pre-loaded at app
-  startup so transcription begins immediately after stopping a recording.
-- **Version number** shown in the Settings dialog.
-
 ---
 
 ## Why this works without local admin rights
