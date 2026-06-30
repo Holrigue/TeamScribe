@@ -18,6 +18,32 @@ from pathlib import Path
 
 from . import config
 
+# Maps TeamScribe UI language codes to Whisper language codes.
+# Whisper uses ISO 639-1 for most languages; a few differ or need explicit mapping.
+_UI_TO_WHISPER: dict[str, str] = {
+    "en": "en",
+    "fr": "fr",
+    "es": "es",
+    "pt": "pt",
+    "de": "de",
+    "it": "it",
+    "ru": "ru",
+    "ja": "ja",
+    "zh": "zh",
+    "ko": "ko",
+    "hi": "hi",
+    "ar": "ar",
+    "bn": "bn",
+    "ur": "ur",
+}
+
+
+def _transcription_language() -> str:
+    """Return the Whisper language code from the saved GUI language setting."""
+    settings = config.load_gui_settings()
+    ui_lang = settings.get("language", "fr")
+    return _UI_TO_WHISPER.get(ui_lang, ui_lang)
+
 
 @dataclass
 class Segment:
@@ -142,10 +168,11 @@ def transcribe(
     def _run(device: str, compute_type: str) -> list[Segment]:
         log(f"Loading faster-whisper '{model_name}' on {device} ({compute_type})…")
         model = _get_model(model_name, device, compute_type)
-        log("Transcribing (French, VAD filter on)…")
+        lang = _transcription_language()
+        log(f"Transcribing (language={lang}, VAD filter on)…")
         segments_iter, info = model.transcribe(
             str(audio_path),
-            language="fr",
+            language=lang,
             vad_filter=True,
             beam_size=5,
         )

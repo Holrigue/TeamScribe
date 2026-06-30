@@ -276,7 +276,12 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.lang_combo)
         lang_note = QLabel(tr("language_restart_note", self.lang))
         lang_note.setStyleSheet("color: #999; font-size: 11px;")
+        lang_note.setWordWrap(True)
         layout.addWidget(lang_note)
+        lang_transcription_note = QLabel(tr("language_transcription_note", self.lang))
+        lang_transcription_note.setStyleSheet("color: #1e88e5; font-size: 10px;")
+        lang_transcription_note.setWordWrap(True)
+        layout.addWidget(lang_transcription_note)
 
         layout.addWidget(QLabel(tr("theme_label", self.lang)))
         theme_row = QHBoxLayout()
