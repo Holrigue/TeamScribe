@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "teamscribe"
+version = "2.1.5"
+description = "Capture, transcribe (French Québécois) and summarize Microsoft Teams meetings, then push action items to Microsoft Planner."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "TeamScribe" }]
+
+# NOTE: every dependency below installs cleanly with `pip install --user`
+# on Windows 11 — none requires an admin elevation prompt, a signed driver,
+# or a manual control-panel step (no "Stereo Mix").
+dependencies = [
+    "PyAudioWPatch>=0.2.12.7",  # WASAPI loopback capture, pip-only, no admin
+    "faster-whisper>=1.0.0",    # CTranslate2 Whisper, GPU auto-detect + CPU fallback
+    "numpy>=1.24",
+    "scipy>=1.10",              # high-quality resampling to 16 kHz
+    "anthropic>=0.40",          # summarization via Claude (default LLM backend)
+    "openai>=1.40",             # optional summarization backend (TEAMSCRIBE_LLM_PROVIDER=openai / azure_openai)
+    "google-generativeai>=0.8", # optional summarization backend (TEAMSCRIBE_LLM_PROVIDER=gemini)
+    "msal>=1.28",               # Microsoft auth (device code flow)
+    "requests>=2.31",           # Microsoft Graph REST calls
+    "typer>=0.12",              # CLI
+    "rich>=13.7",               # pretty console output / timers
+    "python-dotenv>=1.0",       # load secrets from .env (never the registry)
+    "PySide6>=6.6",              # desktop widget (teamscribe gui)
+]
+
+[project.optional-dependencies]
+# Pip-only CUDA runtime for GPU transcription (admin-free, no CUDA Toolkit
+# install needed). Install with `pip install --user -e .[gpu]` if you have
+# an NVIDIA GPU and want faster-than-CPU transcription.
+gpu = [
+    "nvidia-cublas-cu12",
+    "nvidia-cudnn-cu12",
+    "nvidia-cuda-runtime-cu12",
+]
+
+[project.scripts]
+teamscribe = "teamscribe.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["teamscribe*"]
