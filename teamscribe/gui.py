@@ -798,6 +798,23 @@ class TeamScribeWidget(QWidget):
         config.save_gui_settings(self.settings)
 
     def set_keep_audio(self, privacy_on: bool) -> None:
+        if not privacy_on:
+            # Privacy mode is being turned OFF — show a consent notice and let
+            # the user confirm before applying the change.
+            confirm = QMessageBox.warning(
+                self,
+                tr("privacy_off_title", self.lang),
+                tr("privacy_off_body", self.lang),
+                QMessageBox.Ok | QMessageBox.Cancel,
+                QMessageBox.Cancel,
+            )
+            if confirm != QMessageBox.Ok:
+                # User cancelled — revert the switch silently.
+                self.privacy_switch.blockSignals(True)
+                self.privacy_switch.setChecked(True)
+                self.privacy_switch.blockSignals(False)
+                return
+
         keep_audio = not privacy_on
         self.settings["keep_audio"] = keep_audio
         config.save_gui_settings(self.settings)

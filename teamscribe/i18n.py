@@ -767,6 +767,118 @@ _STRINGS: dict[str, dict[str, str]] = {
         "bn": "● রেকর্ডিং শুরু করুন",
         "ur": "● ریکارڈنگ شروع کریں",
     },
+    "privacy_off_title": {
+        "en": "Disable Privacy Mode?",
+        "fr": "Désactiver le mode privé ?",
+        "es": "¿Desactivar el modo privado?",
+        "pt": "Desativar o modo privado?",
+        "de": "Datenschutzmodus deaktivieren?",
+        "it": "Disattivare la modalità privacy?",
+        "ru": "Отключить режим конфиденциальности?",
+        "ja": "プライバシーモードを無効にしますか？",
+        "zh": "禁用隐私模式？",
+        "ko": "개인 정보 보호 모드를 비활성화하시겠습니까?",
+        "hi": "गोपनीयता मोड अक्षम करें?",
+        "ar": "تعطيل وضع الخصوصية؟",
+        "bn": "গোপনীয়তা মোড নিষ্ক্রিয় করবেন?",
+        "ur": "پرائیویسی موڈ غیر فعال کریں؟",
+    },
+    "privacy_off_body": {
+        "en": (
+            "By disabling Privacy Mode, raw audio recordings will be kept on disk after transcription.\n\n"
+            "This is YOUR choice and YOUR responsibility.\n\n"
+            "You are solely responsible for ensuring that storing audio recordings complies with "
+            "all applicable privacy laws, workplace policies, and the consent of all participants. "
+            "TeamScribe and its author accept no liability for any misuse of stored audio data."
+        ),
+        "fr": (
+            "En désactivant le mode privé, les enregistrements audio bruts seront conservés sur le disque après la transcription.\n\n"
+            "C'est VOTRE choix et VOTRE responsabilité.\n\n"
+            "Vous êtes seul(e) responsable de vous assurer que la conservation des enregistrements audio respecte "
+            "toutes les lois sur la vie privée, les politiques de votre lieu de travail et le consentement de tous les participants. "
+            "TeamScribe et son auteur déclinent toute responsabilité en cas de mauvaise utilisation des données audio conservées."
+        ),
+        "es": (
+            "Al desactivar el modo privado, las grabaciones de audio sin procesar se conservarán en el disco tras la transcripción.\n\n"
+            "Esta es TU elección y TU responsabilidad.\n\n"
+            "Eres el único responsable de garantizar que el almacenamiento de grabaciones de audio cumpla con "
+            "todas las leyes de privacidad aplicables, las políticas del lugar de trabajo y el consentimiento de todos los participantes. "
+            "TeamScribe y su autor no aceptan ninguna responsabilidad por el uso indebido de los datos de audio almacenados."
+        ),
+        "pt": (
+            "Ao desativar o Modo Privado, as gravações de áudio brutas serão mantidas no disco após a transcrição.\n\n"
+            "Esta é SUA escolha e SUA responsabilidade.\n\n"
+            "Você é o único responsável por garantir que o armazenamento de gravações de áudio esteja em conformidade com "
+            "todas as leis de privacidade aplicáveis, políticas do local de trabalho e o consentimento de todos os participantes. "
+            "TeamScribe e seu autor não aceitam nenhuma responsabilidade pelo uso indevido dos dados de áudio armazenados."
+        ),
+        "de": (
+            "Durch das Deaktivieren des Datenschutzmodus werden Rohtonaufnahmen nach der Transkription auf der Festplatte gespeichert.\n\n"
+            "Dies ist DEINE Wahl und DEINE Verantwortung.\n\n"
+            "Du bist allein dafür verantwortlich, sicherzustellen, dass die Speicherung von Audioaufnahmen allen geltenden "
+            "Datenschutzgesetzen, Unternehmensrichtlinien und der Zustimmung aller Teilnehmer entspricht. "
+            "TeamScribe und sein Autor übernehmen keine Haftung für den Missbrauch gespeicherter Audiodaten."
+        ),
+        "it": (
+            "Disattivando la Modalità Privacy, le registrazioni audio grezze verranno conservate sul disco dopo la trascrizione.\n\n"
+            "Questa è LA TUA scelta e LA TUA responsabilità.\n\n"
+            "Sei l'unico responsabile di garantire che la conservazione delle registrazioni audio sia conforme a "
+            "tutte le leggi sulla privacy applicabili, alle politiche aziendali e al consenso di tutti i partecipanti. "
+            "TeamScribe e il suo autore non accettano alcuna responsabilità per l'uso improprio dei dati audio conservati."
+        ),
+        "ru": (
+            "При отключении режима конфиденциальности необработанные аудиозаписи будут сохраняться на диске после транскрипции.\n\n"
+            "Это ВАШ выбор и ВАША ответственность.\n\n"
+            "Вы несёте исключительную ответственность за то, чтобы хранение аудиозаписей соответствовало "
+            "всем применимым законам о конфиденциальности, политикам организации и согласию всех участников. "
+            "TeamScribe и его автор не несут ответственности за любое ненадлежащее использование сохранённых аудиоданных."
+        ),
+        "ja": (
+            "プライバシーモードを無効にすると、転写後に生の音声録音がディスクに保存されます。\n\n"
+            "これはあなたの選択とあなたの責任です。\n\n"
+            "音声録音の保存が適用されるすべてのプライバシー法、職場のポリシー、および全参加者の同意に準拠していることを確認する責任はあなた自身にあります。"
+            "TeamScribeおよびその作者は、保存された音声データの悪用について一切の責任を負いません。"
+        ),
+        "zh": (
+            "禁用隐私模式后，原始音频录音将在转录后保留在磁盘上。\n\n"
+            "这是您的选择，也是您的责任。\n\n"
+            "您需独自确保存储音频录音符合所有适用的隐私法律、工作场所政策以及所有参与者的同意。"
+            "TeamScribe 及其作者对存储音频数据的任何滥用概不负责。"
+        ),
+        "ko": (
+            "개인 정보 보호 모드를 비활성화하면 전사 후 원시 오디오 녹음이 디스크에 보관됩니다.\n\n"
+            "이것은 귀하의 선택이며 귀하의 책임입니다.\n\n"
+            "오디오 녹음 저장이 모든 적용 가능한 개인 정보 보호법, 직장 정책 및 모든 참가자의 동의를 준수하는지 확인하는 것은 귀하의 단독 책임입니다. "
+            "TeamScribe 및 그 작성자는 저장된 오디오 데이터의 오용에 대해 어떠한 책임도 지지 않습니다."
+        ),
+        "hi": (
+            "गोपनीयता मोड अक्षम करने पर, ट्रांसक्रिप्शन के बाद कच्ची ऑडियो रिकॉर्डिंग डिस्क पर रखी जाएगी।\n\n"
+            "यह आपकी पसंद और आपकी जिम्मेदारी है।\n\n"
+            "यह सुनिश्चित करना आपकी एकमात्र जिम्मेदारी है कि ऑडियो रिकॉर्डिंग संग्रहीत करना सभी लागू गोपनीयता कानूनों, "
+            "कार्यस्थल नीतियों और सभी प्रतिभागियों की सहमति का अनुपालन करता है। "
+            "TeamScribe और उसके लेखक संग्रहीत ऑडियो डेटा के किसी भी दुरुपयोग के लिए कोई दायित्व स्वीकार नहीं करते।"
+        ),
+        "ar": (
+            "بتعطيل وضع الخصوصية، سيتم الاحتفاظ بتسجيلات الصوت الأولية على القرص بعد النسخ.\n\n"
+            "هذا اختيارك ومسؤوليتك الشخصية.\n\n"
+            "أنت وحدك المسؤول عن ضمان أن تخزين التسجيلات الصوتية يمتثل لجميع قوانين الخصوصية المعمول بها، "
+            "وسياسات مكان العمل، وموافقة جميع المشاركين. "
+            "لا يتحمل TeamScribe ومؤلفه أي مسؤولية عن أي إساءة استخدام للبيانات الصوتية المخزنة."
+        ),
+        "bn": (
+            "প্রাইভেসি মোড নিষ্ক্রিয় করলে, ট্রান্সক্রিপশনের পরে কাঁচা অডিও রেকর্ডিং ডিস্কে রাখা হবে।\n\n"
+            "এটি আপনার পছন্দ এবং আপনার দায়িত্ব।\n\n"
+            "অডিও রেকর্ডিং সংরক্ষণ সমস্ত প্রযোজ্য গোপনীয়তা আইন, কর্মক্ষেত্র নীতি এবং সমস্ত অংশগ্রহণকারীদের সম্মতি মেনে চলে তা নিশ্চিত করা সম্পূর্ণ আপনার দায়িত্ব। "
+            "TeamScribe এবং এর লেখক সংরক্ষিত অডিও ডেটার যেকোনো অপব্যবহারের জন্য কোনো দায় গ্রহণ করেন না।"
+        ),
+        "ur": (
+            "پرائیویسی موڈ غیر فعال کرنے پر، ٹرانسکرپشن کے بعد خام آڈیو ریکارڈنگ ڈسک پر محفوظ رہے گی۔\n\n"
+            "یہ آپ کا انتخاب اور آپ کی ذمہ داری ہے۔\n\n"
+            "یہ یقینی بنانا صرف آپ کی ذمہ داری ہے کہ آڈیو ریکارڈنگ ذخیرہ کرنا تمام متعلقہ پرائیویسی قوانین، "
+            "کام کی جگہ کی پالیسیوں اور تمام شرکاء کی رضامندی کے مطابق ہو۔ "
+            "TeamScribe اور اس کے مصنف محفوظ آڈیو ڈیٹا کے کسی بھی غلط استعمال کی کوئی ذمہ داری قبول نہیں کرتے۔"
+        ),
+    },
     "privacy_mode_label": {
         "en": "Privacy mode",
         "fr": "Mode privé",
