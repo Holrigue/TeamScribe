@@ -21,6 +21,14 @@ meetings — available as a **desktop widget** (GUI) or a **command-line tool**.
 
 ---
 
+## What's new in v2.1.0
+
+- **Privacy mode** — the "Audio kept" button is replaced by a compact **Privacy mode ON/OFF switch** in the widget. When ON (default), the raw audio file is deleted after transcription and a brief hint message confirms it. Takes up much less space in the UI.
+- **Auto-summarize replaces the Summarize button** — since summaries are now automatic after recording, the "Summarize" button has been removed from the widget. Re-summarize is still available via right-click on a session.
+- **12 new UI languages** — the widget interface is now available in: Spanish, Portuguese, German, Italian, Russian, Japanese, Mandarin Chinese, Korean, Hindi, Arabic, Bengali, and Urdu (in addition to English and French). Language is selected via a dropdown in Settings.
+
+---
+
 ## What's new in v2.0.0
 
 - **Minimized mode** — collapse the widget to a slim title bar (down/up toggle);

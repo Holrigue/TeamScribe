@@ -140,7 +140,7 @@ _GUI_DEFAULTS = {
     "pos_x": None,  # last on-screen position; None = not yet placed
     "pos_y": None,
     "language": "en",  # "en" or "fr"; new installs default to English
-    "keep_audio": True,  # False = delete audio.wav after transcription (privacy mode)
+    "keep_audio": False,  # False = delete audio.wav after transcription (privacy mode ON by default)
 }
 
 

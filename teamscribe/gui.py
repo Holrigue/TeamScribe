@@ -21,7 +21,7 @@ import threading
 import webbrowser
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, QSize, Qt, QThread, Signal
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QGuiApplication,
@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QCheckBox,
+    QComboBox,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -249,19 +250,30 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.ontop_box)
 
         layout.addWidget(QLabel(tr("language_label", self.lang)))
-        lang_row = QHBoxLayout()
-        self.en_radio = QRadioButton("English")
-        self.fr_radio = QRadioButton("Français")
-        lang_group = QButtonGroup(self)
-        lang_group.addButton(self.en_radio)
-        lang_group.addButton(self.fr_radio)
-        if self.lang == "fr":
-            self.fr_radio.setChecked(True)
-        else:
-            self.en_radio.setChecked(True)
-        lang_row.addWidget(self.en_radio)
-        lang_row.addWidget(self.fr_radio)
-        layout.addLayout(lang_row)
+        self.lang_combo = QComboBox()
+        _LANGUAGES = [
+            ("en", "English"),
+            ("fr", "Français"),
+            ("es", "Español"),
+            ("pt", "Português"),
+            ("de", "Deutsch"),
+            ("it", "Italiano"),
+            ("ru", "Русский"),
+            ("ja", "日本語"),
+            ("zh", "中文"),
+            ("ko", "한국어"),
+            ("hi", "हिन्दी"),
+            ("ar", "العربية"),
+            ("bn", "বাংলা"),
+            ("ur", "اردو"),
+        ]
+        for code, label in _LANGUAGES:
+            self.lang_combo.addItem(label, code)
+        current_idx = next(
+            (i for i, (code, _) in enumerate(_LANGUAGES) if code == self.lang), 0
+        )
+        self.lang_combo.setCurrentIndex(current_idx)
+        layout.addWidget(self.lang_combo)
         lang_note = QLabel(tr("language_restart_note", self.lang))
         lang_note.setStyleSheet("color: #999; font-size: 11px;")
         layout.addWidget(lang_note)
@@ -426,7 +438,7 @@ class SettingsDialog(QDialog):
         self.settings["always_on_top"] = self.ontop_box.isChecked()
         self.settings["theme"] = "light" if self.light_radio.isChecked() else "dark"
         self.settings["glass_opacity"] = self.glass_slider.value()
-        self.settings["language"] = "fr" if self.fr_radio.isChecked() else "en"
+        self.settings["language"] = self.lang_combo.currentData()
         config.save_gui_settings(self.settings)
         super().accept()
 
@@ -616,16 +628,26 @@ class TeamScribeWidget(QWidget):
         self.status_label.setStyleSheet("color: #999;")
         content_layout.addWidget(self.status_label)
 
-        # Mic privacy toggle: when "on" (audio not kept), only the text
-        # transcript is saved and the raw recording is deleted right after
-        # transcription, for people who'd rather not keep audio at all.
-        self.mic_btn = QPushButton(tr("mic_audio_kept", self.lang))
-        self.mic_btn.setCheckable(True)
-        self.mic_btn.setChecked(not self.settings.get("keep_audio", True))
-        self.mic_btn.setToolTip(tr("mic_tooltip_off", self.lang))
-        self.mic_btn.toggled.connect(self.set_keep_audio)
-        content_layout.addWidget(self.mic_btn)
-        self.set_keep_audio(self.mic_btn.isChecked())
+        # Privacy mode switch: when ON the raw audio file is deleted after
+        # transcription so only the text transcript is kept.
+        privacy_row = QHBoxLayout()
+        privacy_label = QLabel(tr("privacy_mode_label", self.lang))
+        privacy_label.setStyleSheet("font-size: 12px;")
+        self.privacy_switch = QCheckBox()
+        # Privacy mode ON by default (keep_audio defaults to False now)
+        privacy_on_default = not self.settings.get("keep_audio", False)
+        self.privacy_switch.setChecked(privacy_on_default)
+        self.privacy_switch.setToolTip(tr("privacy_mode_tooltip", self.lang))
+        self.privacy_switch.toggled.connect(self.set_keep_audio)
+        self.privacy_hint = QLabel(tr("privacy_mode_hint", self.lang))
+        self.privacy_hint.setStyleSheet("color: #1e88e5; font-size: 10px;")
+        self.privacy_hint.setVisible(False)
+        privacy_row.addWidget(privacy_label)
+        privacy_row.addStretch()
+        privacy_row.addWidget(self.privacy_switch)
+        content_layout.addLayout(privacy_row)
+        content_layout.addWidget(self.privacy_hint)
+        self.set_keep_audio(privacy_on_default)
 
         # Record button
         self.record_btn = QPushButton(tr("record_start", self.lang))
@@ -643,11 +665,8 @@ class TeamScribeWidget(QWidget):
         content_layout.addWidget(self.session_list)
 
         actions_row = QHBoxLayout()
-        self.summarize_btn = QPushButton(tr("summarize_btn", self.lang))
-        self.summarize_btn.clicked.connect(self.run_summarize)
         self.push_btn = QPushButton(tr("push_planner_btn", self.lang))
         self.push_btn.clicked.connect(self.run_push_tasks)
-        actions_row.addWidget(self.summarize_btn)
         actions_row.addWidget(self.push_btn)
         content_layout.addLayout(actions_row)
 
@@ -747,19 +766,13 @@ class TeamScribeWidget(QWidget):
 
     def set_keep_audio(self, privacy_on: bool) -> None:
         keep_audio = not privacy_on
-        if privacy_on:
-            self.mic_btn.setText(tr("mic_audio_not_kept", self.lang))
-            self.mic_btn.setStyleSheet(
-                "background: #1565c0; color: white; border: 1px solid #1e88e5;"
-                " border-radius: 4px; padding: 6px;"
-            )
-            self.mic_btn.setToolTip(tr("mic_tooltip_on", self.lang))
-        else:
-            self.mic_btn.setText(tr("mic_audio_kept", self.lang))
-            self.mic_btn.setStyleSheet("")
-            self.mic_btn.setToolTip(tr("mic_tooltip_off", self.lang))
         self.settings["keep_audio"] = keep_audio
         config.save_gui_settings(self.settings)
+        if privacy_on:
+            self.privacy_hint.setVisible(True)
+            QTimer.singleShot(3000, lambda: self.privacy_hint.setVisible(False))
+        else:
+            self.privacy_hint.setVisible(False)
 
     # -- settings --------------------------------------------------
 
