@@ -449,7 +449,9 @@ class SettingsDialog(QDialog):
         language_changed = self.settings["language"] != previous_lang
         super().accept()
         if language_changed and self.parent() is not None:
-            self.parent().restart_app()
+            # Defer until after dialog.exec() unwinds so QApplication.quit()
+            # inside restart_app() doesn't fire while exec() is still on the stack.
+            QTimer.singleShot(0, self.parent().restart_app)
 
 
 # --------------------------------------------------------------------------
