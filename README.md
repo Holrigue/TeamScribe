@@ -89,6 +89,16 @@ By using TeamScribe, you acknowledge and agree that:
 
 ---
 
+## What's new in v2.2.0
+
+- **Session context menu** — right-click a session in the list to open its file location, its audio file (if kept), or its note file, in addition to deleting it.
+- **Double-click opens the folder** — double-clicking a session now opens its file location directly instead of the notes file.
+- **Faster transcription** — transcription now uses faster-whisper's batched inference pipeline, cutting wall-clock time roughly 2-4x on GPU for hour-long meetings, with no accuracy trade-off.
+- **Non-blocking recording** — the "Start recording" button re-enables as soon as recording stops, instead of waiting for transcription/summarization to finish. Back-to-back meetings can be recorded immediately, one after another, while the previous session finishes processing in the background.
+- **Quick session titles** — right after you stop recording, a fast (≤7s) scan of the first ~45 seconds of audio gives the session a real title immediately, instead of a raw timestamp, while the full transcript/summary keep processing in the background.
+- **Human-readable summary.txt** — each summarized session now also gets a plain-text `summary.txt` (no markdown syntax) alongside `summary.json`/`summary.md`.
+- **Fully localized summaries** — summary section headings and the AI-generated content itself (topics, decisions, action items) are now written in whichever of the 14 UI languages is selected in Settings, not just French.
+
 ## What's new in v2.1.5
 
 - **Privacy Mode consent popup** — disabling Privacy Mode now shows a warning dialog explaining that retaining audio files is the user's own choice and responsibility, with a legal disclaimer. The switch reverts automatically if the user cancels.
@@ -98,12 +108,6 @@ By using TeamScribe, you acknowledge and agree that:
 ## What's new in v2.1.4
 
 - **AI provider switcher in Settings** — a new dropdown in the Settings dialog lets you switch between Claude, ChatGPT, Copilot (Azure OpenAI), and Gemini without editing any file. The choice is saved in `gui_settings.json` and takes priority over the `.env` variable.
-
-## What's new in v2.1.3
-
-- **Gemini (Google) support** — set `TEAMSCRIBE_LLM_PROVIDER=gemini` and add your `GEMINI_API_KEY` to use Google's Gemini models (default: `gemini-1.5-flash`). Model is overridable via `TEAMSCRIBE_GEMINI_MODEL`.
-- **Azure OpenAI / Copilot support** — set `TEAMSCRIBE_LLM_PROVIDER=azure_openai` with your `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, and deployment name to use Microsoft's hosted GPT models.
-- **`.env.example`** updated with all four providers and their configuration variables.
 
 ---
 

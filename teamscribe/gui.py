@@ -64,6 +64,7 @@ class RecordWorker(QThread):
     tick = Signal(float)
     info = Signal(str, str)
     phase = Signal(str)   # "transcribing" | "summarizing" | "saving"
+    renamed = Signal()
     finished_ok = Signal(Path)
     failed = Signal(str)
 
@@ -78,7 +79,7 @@ class RecordWorker(QThread):
         self.stop_event.set()
 
     def run(self) -> None:
-        from . import capture, summarize as summarize_mod, transcribe
+        from . import capture, naming, summarize as summarize_mod, transcribe
 
         try:
             session = config.new_session_dir()
@@ -96,6 +97,28 @@ class RecordWorker(QThread):
                 on_tick=on_tick,
                 stop_event=self.stop_event,
             )
+
+            # Best-effort quick title from a short audio snippet, bounded to
+            # ~7s, so the session shows a meaningful name right away instead
+            # of a raw timestamp while the full pipeline (which can take
+            # minutes on long meetings) still runs. If it doesn't finish in
+            # time, this is simply skipped — finalize_session's slower,
+            # full-transcript rename below still covers it.
+            quick_result: dict[str, str] = {}
+
+            def _quick_scan():
+                title = naming.quick_title(audio_path)
+                if title:
+                    quick_result["slug"] = title
+
+            quick_thread = threading.Thread(target=_quick_scan, daemon=True)
+            quick_thread.start()
+            quick_thread.join(timeout=7.0)
+            if "slug" in quick_result:
+                session = naming.quick_rename(session, quick_result["slug"])
+                audio_path = next(session.glob("*.wav"), audio_path)
+                self.renamed.emit()
+
             self.phase.emit("transcribing")
             result = transcribe.transcribe(audio_path, session, log=lambda *_: None)
             if not self.keep_audio:
@@ -498,6 +521,10 @@ class TeamScribeWidget(QWidget):
         self._minimized = False
         self._expanded_size: QSize | None = None
         self._record_worker: RecordWorker | None = None
+        # Workers whose recording phase is done but that are still
+        # transcribing/summarizing in the background — kept referenced so a
+        # new recording can start immediately without waiting on them.
+        self._background_workers: list[RecordWorker] = []
         self._task_worker: TaskWorker | None = None
         self._update_check_worker: UpdateCheckWorker | None = None
         self._update_info: dict = {"available": False}
@@ -848,7 +875,7 @@ class TeamScribeWidget(QWidget):
             self._apply_theme()
 
     def restart_app(self) -> None:
-        if self._record_worker is not None:
+        if self._record_worker is not None or self._background_workers:
             QMessageBox.information(
                 self, "TeamScribe", tr("restart_blocked", self.lang)
             )
@@ -931,9 +958,7 @@ class TeamScribeWidget(QWidget):
 
     def _open_session_folder(self, item: QListWidgetItem) -> None:
         path = Path(item.data(Qt.UserRole))
-        notes = list(path.glob("*_notes.md")) or list(path.glob("summary.md"))
-        target = notes[0] if notes else path
-        webbrowser.open(target.as_uri() if target.is_file() else str(target))
+        os.startfile(str(path))
 
     def eventFilter(self, obj, event) -> bool:
         if (
@@ -954,7 +979,26 @@ class TeamScribeWidget(QWidget):
         # the current selection (e.g. a right-click outside any selection).
         if item not in self.session_list.selectedItems():
             self.session_list.setCurrentItem(item)
+        path = Path(item.data(Qt.UserRole))
         menu = QMenu(self)
+        menu.addAction(tr("open_folder_action", self.lang), lambda: os.startfile(str(path)))
+        audio_files = list(path.glob("*.wav"))
+        if audio_files:
+            menu.addAction(
+                tr("open_audio_action", self.lang), lambda: os.startfile(str(audio_files[0]))
+            )
+        notes_files = (
+            list(path.glob("*_notes.txt"))
+            or list(path.glob("summary.txt"))
+            or list(path.glob("*_notes.md"))
+            or list(path.glob("summary.md"))
+        )
+        if notes_files:
+            menu.addAction(
+                tr("open_notes_action", self.lang),
+                lambda: webbrowser.open(notes_files[0].as_uri()),
+            )
+        menu.addSeparator()
         menu.addAction(tr("delete_action", self.lang), self._delete_selected_sessions)
         menu.exec(self.session_list.mapToGlobal(pos))
 
@@ -1035,16 +1079,19 @@ class TeamScribeWidget(QWidget):
             self._record_worker.stop()
             return
 
-        self._record_worker = RecordWorker(
+        worker = RecordWorker(
             do_summarize=self.settings.get("auto_summarize", True),
             keep_audio=self.settings.get("keep_audio", True),
         )
-        self._record_worker.tick.connect(self._on_tick)
-        self._record_worker.info.connect(self._on_info)
-        self._record_worker.phase.connect(self._on_phase)
-        self._record_worker.finished_ok.connect(self._on_record_done)
-        self._record_worker.failed.connect(self._on_record_failed)
-        self._record_worker.start()
+        worker.tick.connect(self._on_tick)
+        worker.info.connect(self._on_info)
+        worker.phase.connect(self._on_phase)
+        worker.renamed.connect(self.refresh_sessions)
+        worker.finished_ok.connect(self._on_record_done)
+        worker.failed.connect(self._on_record_failed)
+        self._record_worker = worker
+        self._background_workers.append(worker)
+        worker.start()
 
         self.record_btn.setText(tr("record_stop", self.lang))
         self._set_record_btn_color(recording=True)
@@ -1052,45 +1099,66 @@ class TeamScribeWidget(QWidget):
         self.status_dot.setStyleSheet("color: #e53935; font-size: 14px;")
         self.status_label.setText(tr("listening", self.lang, time="00:00:00"))
 
+    def _unblock_record_button(self) -> None:
+        self._record_worker = None
+        self.record_btn.setEnabled(True)
+        self.mini_record_btn.setEnabled(True)
+        self.record_btn.setText(tr("record_start", self.lang))
+        self._set_record_btn_color(recording=False)
+        self._set_mini_record_btn_color(recording=False)
+        self.status_dot.setStyleSheet("color: #666; font-size: 14px;")
+
     def _on_phase(self, phase: str) -> None:
         _phase_keys = {
             "transcribing": "phase_transcribing",
             "summarizing": "phase_summarizing",
             "saving": "phase_saving",
         }
-        text = tr(_phase_keys.get(phase, phase), self.lang)
-        self.status_label.setText(text)
-        self.mini_record_btn.setToolTip(text)
-        self.mini_record_btn.setText("⟳")
+        worker = self.sender()
+        if phase == "transcribing" and worker is self._record_worker:
+            # The recording itself just finished; unblock the record button
+            # right away so back-to-back meetings don't have to wait for
+            # this session's transcription/summarization to finish in the
+            # background before a new one can start.
+            self._unblock_record_button()
+        # Don't let a background session's progress clobber the status line
+        # of a recording that's actively in progress.
+        if self._record_worker is None:
+            text = tr(_phase_keys.get(phase, phase), self.lang)
+            self.status_label.setText(text)
+            self.mini_record_btn.setToolTip(text)
+            self.mini_record_btn.setText("⟳")
 
     def _on_tick(self, elapsed: float) -> None:
+        if self.sender() is not self._record_worker:
+            return
         m, s = divmod(int(elapsed), 60)
         h, m = divmod(m, 60)
         self.status_label.setText(tr("listening", self.lang, time=f"{h:02d}:{m:02d}:{s:02d}"))
 
     def _on_info(self, mic_name: str, speaker_name: str) -> None:
+        if self.sender() is not self._record_worker:
+            return
         self.status_label.setToolTip(f"mic: {mic_name}\nspeakers: {speaker_name}")
 
     def _on_record_done(self, session: Path) -> None:
-        self._record_worker = None
-        self.record_btn.setEnabled(True)
-        self.mini_record_btn.setEnabled(True)
-        self.record_btn.setText(tr("record_start", self.lang))
-        self._set_record_btn_color(recording=False)
-        self._set_mini_record_btn_color(recording=False)
-        self.status_dot.setStyleSheet("color: #666; font-size: 14px;")
-        self.status_label.setText(tr("record_done", self.lang, name=session.name))
+        worker = self.sender()
+        if worker in self._background_workers:
+            self._background_workers.remove(worker)
+        if self._record_worker is None:
+            self.status_label.setText(tr("record_done", self.lang, name=session.name))
         self.refresh_sessions()
 
     def _on_record_failed(self, message: str) -> None:
-        self._record_worker = None
-        self.record_btn.setEnabled(True)
-        self.mini_record_btn.setEnabled(True)
-        self.record_btn.setText(tr("record_start", self.lang))
-        self._set_record_btn_color(recording=False)
-        self._set_mini_record_btn_color(recording=False)
-        self.status_dot.setStyleSheet("color: #666; font-size: 14px;")
-        self.status_label.setText(tr("error", self.lang))
+        worker = self.sender()
+        if worker is self._record_worker:
+            # Failed before the transcribing-phase handoff (e.g. capture
+            # error), so nothing else has unblocked the button yet.
+            self._unblock_record_button()
+        elif worker in self._background_workers:
+            self._background_workers.remove(worker)
+        if self._record_worker is None:
+            self.status_label.setText(tr("error", self.lang))
         QMessageBox.warning(self, "TeamScribe", tr("record_failed", self.lang, error=message))
 
     # -- summarize / push-tasks --------------------------------------------------

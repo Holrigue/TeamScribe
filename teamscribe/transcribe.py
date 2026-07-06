@@ -137,6 +137,25 @@ def _get_model(model_name: str, device: str, compute_type: str):
     return _model_cache[key]
 
 
+# Batched decoding (faster_whisper.BatchedInferencePipeline) splits long audio
+# into VAD-detected speech chunks and decodes them as a batch instead of one
+# at a time. On GPU this cuts wall-clock time roughly 2-4x for hour-long
+# meetings with negligible accuracy impact, since batching is orthogonal to
+# decoding quality (unlike lowering beam_size). CPU sees a smaller benefit but
+# no regression, so it's used unconditionally.
+_pipeline_cache: dict[tuple[str, str, str], object] = {}
+
+
+def _get_batched_pipeline(model_name: str, device: str, compute_type: str):
+    key = (model_name, device, compute_type)
+    if key not in _pipeline_cache:
+        from faster_whisper import BatchedInferencePipeline
+
+        model = _get_model(model_name, device, compute_type)
+        _pipeline_cache[key] = BatchedInferencePipeline(model=model)
+    return _pipeline_cache[key]
+
+
 def warmup_model() -> None:
     """Load the Whisper model into the cache without transcribing anything.
 
@@ -145,7 +164,44 @@ def warmup_model() -> None:
     """
     model_name = config.whisper_model()
     device, compute_type = _select_device(config.device_preference())
-    _get_model(model_name, device, compute_type)
+    try:
+        _get_batched_pipeline(model_name, device, compute_type)
+    except Exception:
+        _get_model(model_name, device, compute_type)
+
+
+def quick_transcribe_snippet(audio_path: Path, *, max_seconds: float = 45.0) -> str:
+    """Transcribe only the first ``max_seconds`` of ``audio_path``.
+
+    Used to guess a session title right after recording stops, without
+    waiting for the full (potentially minutes-long) transcription. Reuses
+    the already-resident model/pipeline so there's no extra load cost, and
+    trades accuracy for speed (beam_size=1) since this is a best-effort
+    title hint, not the real transcript.
+    """
+    import wave
+
+    import numpy as np
+
+    model_name = config.whisper_model()
+    device, compute_type = _select_device(config.device_preference())
+
+    with wave.open(str(audio_path), "rb") as wf:
+        rate = wf.getframerate()
+        n_frames = min(wf.getnframes(), int(rate * max_seconds))
+        raw = wf.readframes(n_frames)
+    clip = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+
+    lang = _transcription_language()
+    try:
+        pipeline = _get_batched_pipeline(model_name, device, compute_type)
+        segments_iter, _info = pipeline.transcribe(
+            clip, language=lang, vad_filter=True, beam_size=1, batch_size=8
+        )
+    except Exception:
+        model = _get_model(model_name, device, compute_type)
+        segments_iter, _info = model.transcribe(clip, language=lang, vad_filter=True, beam_size=1)
+    return " ".join(seg.text.strip() for seg in segments_iter).strip()
 
 
 def transcribe(
@@ -167,15 +223,29 @@ def transcribe(
 
     def _run(device: str, compute_type: str) -> list[Segment]:
         log(f"Loading faster-whisper '{model_name}' on {device} ({compute_type})…")
-        model = _get_model(model_name, device, compute_type)
         lang = _transcription_language()
-        log(f"Transcribing (language={lang}, VAD filter on)…")
-        segments_iter, info = model.transcribe(
-            str(audio_path),
-            language=lang,
-            vad_filter=True,
-            beam_size=5,
-        )
+        try:
+            pipeline = _get_batched_pipeline(model_name, device, compute_type)
+            log(f"Transcribing (language={lang}, batched, VAD filter on)…")
+            segments_iter, info = pipeline.transcribe(
+                str(audio_path),
+                language=lang,
+                vad_filter=True,
+                beam_size=5,
+                batch_size=16,
+            )
+        except Exception:
+            # Older faster-whisper builds (or an unsupported combination)
+            # may not have BatchedInferencePipeline — fall back to the
+            # plain, unbatched decode path rather than failing the session.
+            model = _get_model(model_name, device, compute_type)
+            log(f"Transcribing (language={lang}, VAD filter on)…")
+            segments_iter, info = model.transcribe(
+                str(audio_path),
+                language=lang,
+                vad_filter=True,
+                beam_size=5,
+            )
         result = [
             Segment(start=seg.start, end=seg.end, text=seg.text.strip())
             for seg in segments_iter

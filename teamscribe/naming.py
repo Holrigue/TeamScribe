@@ -111,6 +111,59 @@ def derive_slug(transcript: str) -> str:
     return _heuristic_slug(transcript)
 
 
+def quick_title(audio_path: Path, *, max_seconds: float = 45.0) -> str | None:
+    """Best-effort session title from just the first ``max_seconds`` of audio.
+
+    Meant to be run under an external time budget (e.g. a thread joined with
+    a timeout) right after recording stops. Returns ``None`` on any failure
+    (including a timed-out caller abandoning the result) so callers fall
+    back to the slower, full-transcript-based naming in ``finalize_session``.
+    """
+    from .transcribe import quick_transcribe_snippet
+
+    try:
+        snippet = quick_transcribe_snippet(audio_path, max_seconds=max_seconds)
+    except Exception:
+        return None
+    if not snippet.strip():
+        return None
+    title = _llm_slug(snippet)
+    if title:
+        return slugify(title)
+    return _heuristic_slug(snippet)
+
+
+def _unique_session_dir(parent: Path, new_name: str) -> Path:
+    new_dir = parent / new_name
+    suffix = 2
+    while new_dir.exists():
+        new_dir = parent / f"{new_name}-{suffix}"
+        suffix += 1
+    return new_dir
+
+
+def quick_rename(session_dir: Path, slug: str) -> Path:
+    """Rename a just-stopped session dir (and its audio.wav) using a
+    quick-scan title, ahead of the full-transcript rename in
+    ``finalize_session``. Idempotent the same way: a no-op if the folder
+    name no longer looks like a bare timestamp.
+    """
+    session_dir = Path(session_dir)
+    if not _TIMESTAMP_RE.match(session_dir.name):
+        return session_dir
+
+    dt = datetime.strptime(session_dir.name, "%Y%m%d_%H%M%S")
+    new_name = f"{slug}_{dt.strftime('%d-%m-%Y')}_{dt.strftime('%H-%M-%S')}"
+
+    audio = session_dir / "audio.wav"
+    if audio.is_file():
+        audio.rename(session_dir / f"{new_name}.wav")
+
+    new_dir = _unique_session_dir(session_dir.parent, new_name)
+    session_dir.rename(new_dir)
+    return new_dir
+
+
 def finalize_session(session_dir: Path, transcript: str, *, log=print) -> Path:
     """Rename a freshly-recorded session's audio/notes files using context.
 
@@ -140,12 +193,11 @@ def finalize_session(session_dir: Path, transcript: str, *, log=print) -> Path:
     if notes_md.is_file():
         notes_md.rename(session_dir / f"{new_name}_notes.md")
 
-    new_dir = session_dir.parent / new_name
-    suffix = 2
-    while new_dir.exists():
-        new_dir = session_dir.parent / f"{new_name}-{suffix}"
-        suffix += 1
+    notes_txt = session_dir / "summary.txt"
+    if notes_txt.is_file():
+        notes_txt.rename(session_dir / f"{new_name}_notes.txt")
 
+    new_dir = _unique_session_dir(session_dir.parent, new_name)
     session_dir.rename(new_dir)
     log(f"Session renamed: {new_dir.name}")
     return new_dir

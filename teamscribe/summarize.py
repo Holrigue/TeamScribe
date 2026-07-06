@@ -25,6 +25,7 @@ import json
 from pathlib import Path
 
 from . import config
+from .i18n import tr
 
 WORD_CHUNK = 15_000
 
@@ -58,26 +59,55 @@ _SCHEMA = {
     "additionalProperties": False,
 }
 
-_SYSTEM = (
-    "Tu es un assistant qui analyse des transcriptions de réunions Microsoft "
-    "Teams en français québécois. Tu extrais fidèlement, sans inventer : les "
-    "sujets discutés, les décisions prises, et les actions à faire. Pour "
-    "chaque action, identifie le responsable et l'échéance UNIQUEMENT s'ils "
-    "sont mentionnés dans la discussion ; sinon laisse une chaîne vide. "
-    "Repère en particulier les actions formulées par « il faut que… », "
-    "« je vais… », « on devrait… », « tu pourrais… ». Réponds toujours en "
-    "français."
-)
+# English names, keyed by UI language code — used to steer the LLM's output
+# language explicitly. English instructions are more reliably followed by
+# most models regardless of target language than instructions written in
+# that target language itself.
+_LANGUAGE_NAMES: dict[str, str] = {
+    "en": "English",
+    "fr": "French",
+    "es": "Spanish",
+    "pt": "Portuguese",
+    "de": "German",
+    "it": "Italian",
+    "ru": "Russian",
+    "ja": "Japanese",
+    "zh": "Chinese",
+    "ko": "Korean",
+    "hi": "Hindi",
+    "ar": "Arabic",
+    "bn": "Bengali",
+    "ur": "Urdu",
+}
+
+
+def _system_prompt(lang: str) -> str:
+    language = _LANGUAGE_NAMES.get(lang, "French")
+    return (
+        "You are an assistant analyzing Microsoft Teams meeting transcripts. "
+        "Faithfully extract, without inventing anything: the topics "
+        "discussed, the decisions made, and the action items. For each "
+        "action item, identify the owner and the due date ONLY if they are "
+        "mentioned in the discussion; otherwise leave an empty string. Watch "
+        "especially for action items phrased as \"we need to...\", \"I "
+        "will...\", \"we should...\", \"could you...\" (in whichever "
+        "language the transcript itself is in). "
+        "Keep the JSON field names exactly as specified in the schema "
+        "(sujets, decisions, actions, description, responsable, echeance) "
+        f"but write every text value in {language}, regardless of the "
+        "transcript's own language."
+    )
+
 
 _CHUNK_INSTR = (
-    "Voici une PARTIE d'une transcription de réunion. Résume cette partie "
-    "selon le schéma demandé."
+    "Here is ONE PART of a meeting transcript. Summarize this part "
+    "according to the requested schema."
 )
 
 _FINAL_INSTR = (
-    "Voici plusieurs résumés partiels d'une même réunion, en JSON. Fusionne-les "
-    "en un seul résumé cohérent selon le schéma demandé : déduplique les sujets "
-    "et décisions, et regroupe les actions identiques."
+    "Here are several partial summaries of the same meeting, as JSON. Merge "
+    "them into a single coherent summary following the requested schema: "
+    "deduplicate topics and decisions, and group identical action items."
 )
 
 
@@ -133,11 +163,11 @@ def _extract_json_anthropic(response) -> dict:
     return json.loads(text)
 
 
-def _summarize_with_anthropic(client, model: str, instruction: str, payload: str) -> dict:
+def _summarize_with_anthropic(client, model: str, system: str, instruction: str, payload: str) -> dict:
     response = client.messages.create(
         model=model,
         max_tokens=8000,
-        system=_SYSTEM,
+        system=system,
         output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
         messages=[
             {
@@ -149,7 +179,7 @@ def _summarize_with_anthropic(client, model: str, instruction: str, payload: str
     return _extract_json_anthropic(response)
 
 
-def _summarize_with_openai(client, model: str, instruction: str, payload: str) -> dict:
+def _summarize_with_openai(client, model: str, system: str, instruction: str, payload: str) -> dict:
     response = client.chat.completions.create(
         model=model,
         max_tokens=8000,
@@ -158,7 +188,7 @@ def _summarize_with_openai(client, model: str, instruction: str, payload: str) -
             "json_schema": {"name": "meeting_summary", "schema": _SCHEMA, "strict": True},
         },
         messages=[
-            {"role": "system", "content": _SYSTEM},
+            {"role": "system", "content": system},
             {"role": "user", "content": f"{instruction}\n\n<<<\n{payload}\n>>>"},
         ],
     )
@@ -172,7 +202,7 @@ def _summarize_with_openai(client, model: str, instruction: str, payload: str) -
 _summarize_with_azure_openai = _summarize_with_openai
 
 
-def _summarize_with_gemini(client, model: str, instruction: str, payload: str) -> dict:
+def _summarize_with_gemini(client, model: str, system: str, instruction: str, payload: str) -> dict:
     import google.generativeai as genai
 
     generation_config = genai.GenerationConfig(
@@ -180,7 +210,7 @@ def _summarize_with_gemini(client, model: str, instruction: str, payload: str) -
         response_schema=_SCHEMA,
         max_output_tokens=8000,
     )
-    prompt = f"{_SYSTEM}\n\n{instruction}\n\n<<<\n{payload}\n>>>"
+    prompt = f"{system}\n\n{instruction}\n\n<<<\n{payload}\n>>>"
     response = client.generate_content(prompt, generation_config=generation_config)
     text = response.text
     if not text:
@@ -188,14 +218,16 @@ def _summarize_with_gemini(client, model: str, instruction: str, payload: str) -
     return json.loads(text)
 
 
-def _summarize_text(provider: str, client, model: str, instruction: str, payload: str) -> dict:
+def _summarize_text(
+    provider: str, client, model: str, system: str, instruction: str, payload: str
+) -> dict:
     if provider == "openai":
-        return _summarize_with_openai(client, model, instruction, payload)
+        return _summarize_with_openai(client, model, system, instruction, payload)
     if provider == "azure_openai":
-        return _summarize_with_azure_openai(client, model, instruction, payload)
+        return _summarize_with_azure_openai(client, model, system, instruction, payload)
     if provider == "gemini":
-        return _summarize_with_gemini(client, model, instruction, payload)
-    return _summarize_with_anthropic(client, model, instruction, payload)
+        return _summarize_with_gemini(client, model, system, instruction, payload)
+    return _summarize_with_anthropic(client, model, system, instruction, payload)
 
 
 def _chunk_words(text: str, size: int) -> list[str]:
@@ -205,43 +237,46 @@ def _chunk_words(text: str, size: int) -> list[str]:
     return [" ".join(words[i : i + size]) for i in range(0, len(words), size)]
 
 
-def summarize_transcript(transcript: str, *, log=print) -> dict:
-    """Summarize a transcript string into the structured dict."""
+def summarize_transcript(transcript: str, *, lang: str | None = None, log=print) -> dict:
+    """Summarize a transcript string into the structured dict, in ``lang``
+    (the UI language code) — defaults to the app's configured UI language."""
     provider, client, model = _client_and_model()
+    system = _system_prompt(lang or config.ui_language())
 
     chunks = _chunk_words(transcript, WORD_CHUNK)
     if len(chunks) == 1:
         log(f"Summarizing with {model}…")
-        return _summarize_text(provider, client, model, _CHUNK_INSTR, chunks[0])
+        return _summarize_text(provider, client, model, system, _CHUNK_INSTR, chunks[0])
 
     log(f"Transcript is long; summarizing in {len(chunks)} chunks with {model}…")
     partials = []
     for i, chunk in enumerate(chunks, 1):
         log(f"  chunk {i}/{len(chunks)}…")
-        partials.append(_summarize_text(provider, client, model, _CHUNK_INSTR, chunk))
+        partials.append(_summarize_text(provider, client, model, system, _CHUNK_INSTR, chunk))
 
     log("Synthesizing final summary…")
     merged_payload = json.dumps(partials, ensure_ascii=False, indent=2)
-    return _summarize_text(provider, client, model, _FINAL_INSTR, merged_payload)
+    return _summarize_text(provider, client, model, system, _FINAL_INSTR, merged_payload)
 
 
-def _to_markdown(summary: dict) -> str:
-    lines = ["# Résumé de la réunion", ""]
+def _to_markdown(summary: dict, lang: str = "fr") -> str:
+    lines = [f"# {tr('summary_title', lang)}", ""]
+    none = tr("summary_none", lang)
 
-    lines.append("## Sujets discutés")
-    for s in summary.get("sujets", []) or ["(aucun)"]:
+    lines.append(f"## {tr('summary_topics', lang)}")
+    for s in summary.get("sujets", []) or [none]:
         lines.append(f"- {s}")
     lines.append("")
 
-    lines.append("## Décisions prises")
-    for d in summary.get("decisions", []) or ["(aucune)"]:
+    lines.append(f"## {tr('summary_decisions', lang)}")
+    for d in summary.get("decisions", []) or [none]:
         lines.append(f"- {d}")
     lines.append("")
 
-    lines.append("## Actions à faire")
+    lines.append(f"## {tr('summary_actions', lang)}")
     actions = summary.get("actions", [])
     if not actions:
-        lines.append("- (aucune)")
+        lines.append(f"- {none}")
     for a in actions:
         desc = a.get("description", "").strip()
         resp = a.get("responsable", "").strip()
@@ -250,25 +285,68 @@ def _to_markdown(summary: dict) -> str:
         if resp:
             suffix.append(f"**{resp}**")
         if ech:
-            suffix.append(f"_échéance : {ech}_")
+            suffix.append(f"_{tr('summary_due', lang)} : {ech}_")
         tail = f" ({' — '.join(suffix)})" if suffix else ""
         lines.append(f"- {desc}{tail}")
     lines.append("")
     return "\n".join(lines)
 
 
+def _to_plain_text(summary: dict, lang: str = "fr") -> str:
+    none = tr("summary_none", lang)
+
+    title = tr("summary_title", lang).upper()
+    lines = [title, "=" * len(title), ""]
+
+    topics = tr("summary_topics", lang).upper()
+    lines.append(topics)
+    lines.append("-" * len(topics))
+    for s in summary.get("sujets", []) or [none]:
+        lines.append(f"  - {s}")
+    lines.append("")
+
+    decisions = tr("summary_decisions", lang).upper()
+    lines.append(decisions)
+    lines.append("-" * len(decisions))
+    for d in summary.get("decisions", []) or [none]:
+        lines.append(f"  - {d}")
+    lines.append("")
+
+    actions_title = tr("summary_actions", lang).upper()
+    lines.append(actions_title)
+    lines.append("-" * len(actions_title))
+    actions = summary.get("actions", [])
+    if not actions:
+        lines.append(f"  - {none}")
+    for a in actions:
+        desc = a.get("description", "").strip()
+        resp = a.get("responsable", "").strip()
+        ech = a.get("echeance", "").strip()
+        suffix = []
+        if resp:
+            suffix.append(f"{tr('summary_responsible', lang)} : {resp}")
+        if ech:
+            suffix.append(f"{tr('summary_due', lang)} : {ech}")
+        tail = f" ({', '.join(suffix)})" if suffix else ""
+        lines.append(f"  - {desc}{tail}")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def summarize_session(session_path: Path, *, log=print) -> dict:
-    """Summarize a session's transcript.txt, writing summary.json / summary.md."""
+    """Summarize a session's transcript.txt, writing summary.json / summary.md / summary.txt."""
     from .transcribe import load_transcript
 
     session_path = Path(session_path)
     transcript = load_transcript(session_path)
-    summary = summarize_transcript(transcript, log=log)
+    lang = config.ui_language()
+    summary = summarize_transcript(transcript, lang=lang, log=log)
 
     (session_path / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    (session_path / "summary.md").write_text(_to_markdown(summary), encoding="utf-8")
+    (session_path / "summary.md").write_text(_to_markdown(summary, lang), encoding="utf-8")
+    (session_path / "summary.txt").write_text(_to_plain_text(summary, lang), encoding="utf-8")
     n = len(summary.get("actions", []))
-    log(f"Wrote summary.json and summary.md ({n} action(s) identified).")
+    log(f"Wrote summary.json, summary.md and summary.txt ({n} action(s) identified).")
     return summary
