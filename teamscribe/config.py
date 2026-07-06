@@ -167,3 +167,10 @@ def save_gui_settings(settings: dict) -> None:
     GUI_SETTINGS_PATH.write_text(
         json.dumps(settings, indent=2), encoding="utf-8"
     )
+
+
+def ui_language() -> str:
+    """The UI language code (e.g. "fr", "en"), for non-GUI code (summarize,
+    naming) that needs to localize output without importing the GUI module.
+    """
+    return load_gui_settings().get("language", "en")
