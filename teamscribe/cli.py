@@ -179,6 +179,47 @@ def summarize(
 
 
 @app.command()
+def export(
+    session: str = typer.Argument(None, help="Session id (default: latest)."),
+    copy: bool = typer.Option(True, help="Also copy it to the clipboard."),
+):
+    """Export a summarized session as portable JSON (teamscribe.meeting/1),
+    to paste or import into a task manager. Writes meeting.json."""
+    from . import export as export_mod
+
+    path = _resolve_session(session)
+    try:
+        text = export_mod.export_session(path)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    console.print(f"Wrote {path / export_mod.FILENAME}")
+    if copy and export_mod.copy_to_clipboard(text):
+        console.print("[green]Copied to the clipboard[/green] — paste it in your task manager (Ctrl+V).")
+
+
+@app.command()
+def ask(
+    request: str = typer.Argument(..., help="What to do, e.g. \"Redo the summary without the chat about the watch\"."),
+    session: str = typer.Argument(None, help="Session id (default: latest)."),
+):
+    """Adjust a meeting with a free-text request: redo/edit its summary
+    (the previous one is kept), copy it for the Dashboard, or answer a question."""
+    from . import export as export_mod
+    from . import summarize as summarize_mod
+
+    path = _resolve_session(session)
+    result = summarize_mod.assist_session(path, request, log=console.print)
+    console.print(result["reply"] or "Done.")
+    if result["action"] == "copy_for_dashboard" and (path / "summary.json").is_file():
+        text = export_mod.export_session(path)
+        if export_mod.copy_to_clipboard(text):
+            console.print("[green]Copied to the clipboard[/green] — paste it in the Dashboard (Ctrl+V).")
+    elif result["action"] == "replace_summary":
+        console.print("Previous summary kept as summary.prev-<timestamp>.json.")
+
+
+@app.command()
 def setup():
     """Pick the target Planner plan + bucket and save them to .env."""
     from . import planner

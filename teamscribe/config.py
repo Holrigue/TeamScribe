@@ -150,6 +150,7 @@ _GUI_DEFAULTS = {
     "language": "en",  # "en" or "fr"; new installs default to English
     "llm_provider": "",  # "" = follow .env; otherwise overrides TEAMSCRIBE_LLM_PROVIDER
     "keep_audio": False,  # False = delete audio.wav after transcription (privacy mode ON by default)
+    "auto_copy_meeting": True,  # copy the portable meeting summary to the clipboard when processing ends
 }
 
 

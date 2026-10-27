@@ -50,9 +50,11 @@ from PySide6.QtWidgets import (
     QSlider,
     QVBoxLayout,
     QWidget,
+    QLineEdit,
+    QPlainTextEdit,
 )
 
-from . import config, shortcuts, update
+from . import config, export, shortcuts, update
 from .i18n import tr
 
 
@@ -247,6 +249,60 @@ class TaskWorker(QThread):
             self.failed.emit(str(exc))
 
 
+
+# --------------------------------------------------------------------------
+# Keyword search over sessions (title, summary, transcript)
+# --------------------------------------------------------------------------
+
+import unicodedata as _ud
+
+_SEARCH_CACHE: dict[str, tuple[float, str, str]] = {}
+
+
+def _fold(text: str) -> str:
+    """Lowercase without accents, for accent-insensitive search."""
+    return "".join(c for c in _ud.normalize("NFD", text.lower()) if _ud.category(c) != "Mn")
+
+
+def _session_text(path: Path) -> tuple[str, str]:
+    """(searchable folded text, original text) for a session, cached by mtime."""
+    files = [path / "summary.json", path / "transcript.txt"]
+    stamp = max((f.stat().st_mtime for f in files if f.is_file()), default=0.0)
+    cached = _SEARCH_CACHE.get(str(path))
+    if cached and cached[0] == stamp:
+        return cached[1], cached[2]
+    parts = [path.name.replace("-", " ").replace("_", " ")]
+    summary = path / "summary.json"
+    if summary.is_file():
+        try:
+            data = json.loads(summary.read_text(encoding="utf-8"))
+            parts += data.get("sujets") or []
+            parts += data.get("decisions") or []
+            for a in data.get("actions") or []:
+                parts += [a.get("description") or "", *(a.get("etapes") or [])]
+        except (ValueError, OSError):
+            pass
+    transcript = path / "transcript.txt"
+    if transcript.is_file():
+        try:
+            parts.append(transcript.read_text(encoding="utf-8"))
+        except OSError:
+            pass
+    original = "\n".join(str(p) for p in parts)
+    folded = _fold(original)
+    _SEARCH_CACHE[str(path)] = (stamp, folded, original)
+    return folded, original
+
+
+def _search_snippet(folded: str, original: str, word: str, width: int = 70) -> str:
+    """A short excerpt around the first match (folding keeps positions for
+    most French text; good enough for a tooltip)."""
+    i = folded.find(word)
+    if i < 0 or len(folded) != len(original):
+        return ""
+    start, end = max(0, i - width), min(len(original), i + len(word) + width)
+    return ("…" if start else "") + " ".join(original[start:end].split()) + ("…" if end < len(original) else "")
+
 # --------------------------------------------------------------------------
 # Settings dialog
 # --------------------------------------------------------------------------
@@ -267,6 +323,10 @@ class SettingsDialog(QDialog):
         self.summarize_box = QCheckBox(tr("auto_summarize", self.lang))
         self.summarize_box.setChecked(self.settings.get("auto_summarize", True))
         layout.addWidget(self.summarize_box)
+
+        self.copy_meeting_box = QCheckBox(tr("auto_copy_meeting", self.lang))
+        self.copy_meeting_box.setChecked(self.settings.get("auto_copy_meeting", True))
+        layout.addWidget(self.copy_meeting_box)
 
         self.ontop_box = QCheckBox(tr("always_on_top", self.lang))
         self.ontop_box.setChecked(self.settings.get("always_on_top", True))
@@ -485,6 +545,7 @@ class SettingsDialog(QDialog):
 
         previous_lang = self.settings.get("language", "en")
         self.settings["auto_summarize"] = self.summarize_box.isChecked()
+        self.settings["auto_copy_meeting"] = self.copy_meeting_box.isChecked()
         self.settings["always_on_top"] = self.ontop_box.isChecked()
         self.settings["theme"] = "light" if self.light_radio.isChecked() else "dark"
         self.settings["glass_opacity"] = self.glass_slider.value()
@@ -716,6 +777,15 @@ class TeamScribeWidget(QWidget):
         content_layout.addWidget(self.record_btn)
 
         content_layout.addWidget(QLabel(tr("recent_sessions", self.lang)))
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText(tr("search_placeholder", self.lang))
+        self.search_edit.setClearButtonEnabled(True)
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(250)
+        self._search_timer.timeout.connect(self.refresh_sessions)
+        self.search_edit.textChanged.connect(lambda _t: self._search_timer.start())
+        content_layout.addWidget(self.search_edit)
         self.session_list = QListWidget()
         self.session_list.setSelectionMode(QListWidget.ExtendedSelection)
         self.session_list.itemDoubleClicked.connect(self._open_session_folder)
@@ -723,6 +793,23 @@ class TeamScribeWidget(QWidget):
         self.session_list.customContextMenuRequested.connect(self._show_session_menu)
         self.session_list.installEventFilter(self)
         content_layout.addWidget(self.session_list)
+
+        # In-app adjustments: one request about the selected meeting (or the
+        # most recent one). The AI redoes/edits the summary, copies it for
+        # the Dashboard, or answers a question.
+        self.assist_target = QLabel()
+        self.assist_target.setStyleSheet("color: #999; font-size: 11px;")
+        self.assist_target.setWordWrap(True)
+        self.session_list.itemSelectionChanged.connect(self._update_assist_target)
+        self.assist_edit = QPlainTextEdit()
+        self.assist_edit.setPlaceholderText(tr("assist_placeholder", self.lang))
+        self.assist_edit.setFixedHeight(64)
+        self.assist_btn = QPushButton(tr("assist_send", self.lang))
+        self.assist_btn.setToolTip(tr("assist_tooltip", self.lang))
+        self.assist_btn.clicked.connect(self.run_assist)
+        content_layout.addWidget(self.assist_target)
+        content_layout.addWidget(self.assist_edit)
+        content_layout.addWidget(self.assist_btn)
 
         actions_row = QHBoxLayout()
         self.push_btn = QPushButton(tr("push_planner_btn", self.lang))
@@ -929,23 +1016,114 @@ class TeamScribeWidget(QWidget):
         os.startfile(str(config.SESSIONS_DIR))
 
     def refresh_sessions(self) -> None:
+        selected = {str(p) for p in self._selected_sessions()} if hasattr(self, "session_list") else set()
         self.session_list.clear()
         if not config.SESSIONS_DIR.is_dir():
+            self._update_assist_target()
             return
         hidden = set(self.settings.get("hidden_sessions", []))
-        sessions = sorted(
-            (p for p in config.SESSIONS_DIR.glob("*") if p.is_dir() and p.name not in hidden),
-            key=lambda p: p.name,
-            reverse=True,
-        )
-        for path in sessions[:20]:
+        # Most recent recording first: the date comes from the folder name
+        # (the folder is renamed after the meeting's topic, so sorting by
+        # name would sort by title).
+        dated = []
+        for p in config.SESSIONS_DIR.glob("*"):
+            if p.is_dir() and p.name not in hidden:
+                try:
+                    dated.append((export.session_date(p), p))
+                except (OSError, ValueError):
+                    continue
+        dated.sort(key=lambda x: x[0], reverse=True)
+        query = _fold(self.search_edit.text().strip()) if hasattr(self, "search_edit") else ""
+        words = query.split()
+        shown = 0
+        for when, path in dated:
+            tooltip = path.name
+            if words:
+                folded, original = _session_text(path)
+                if not all(w in folded for w in words):
+                    continue
+                snippet = _search_snippet(folded, original, words[0])
+                if snippet:
+                    tooltip = f"{path.name}\n\n{snippet}"
+            elif shown >= 20:
+                break
             # summary.json keeps a fixed name regardless of the contextual
             # rename in naming.finalize_session, so it's a stable signal.
             has_summary = (path / "summary.json").is_file()
-            label = f"{'✓' if has_summary else '…'}  {path.name}"
+            label = f"{'✓' if has_summary else '…'}  {when:%Y-%m-%d %H:%M}  {export.title_from_name(path)}"
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, str(path))
+            item.setToolTip(tooltip)
             self.session_list.addItem(item)
+            if str(path) in selected:
+                item.setSelected(True)
+            shown += 1
+        if words and not shown:
+            empty = QListWidgetItem(tr("search_no_result", self.lang))
+            empty.setFlags(Qt.NoItemFlags)
+            self.session_list.addItem(empty)
+        self._update_assist_target()
+
+    def _assist_session(self) -> Path | None:
+        """The meeting the assistant works on: the selection, else the most
+        recent session."""
+        chosen = [p for p in self._selected_sessions() if p]
+        if chosen:
+            return chosen[0]
+        if not config.SESSIONS_DIR.is_dir():
+            return None
+        hidden = set(self.settings.get("hidden_sessions", []))
+        dated = []
+        for p in config.SESSIONS_DIR.glob("*"):
+            if p.is_dir() and p.name not in hidden:
+                try:
+                    dated.append((export.session_date(p), p))
+                except (OSError, ValueError):
+                    continue
+        return max(dated, key=lambda x: x[0])[1] if dated else None
+
+    def _update_assist_target(self) -> None:
+        if not hasattr(self, "assist_target"):
+            return
+        target = self._assist_session()
+        explicit = bool(self._selected_sessions())
+        if target is None:
+            self.assist_target.setText(tr("assist_no_session", self.lang))
+        else:
+            key = "assist_target_selected" if explicit else "assist_target_latest"
+            self.assist_target.setText(tr(key, self.lang, name=export.title_from_name(target)))
+
+    def run_assist(self) -> None:
+        request = self.assist_edit.toPlainText().strip()
+        if not request:
+            self.assist_edit.setFocus()
+            return
+        session = self._assist_session()
+        if session is None:
+            QMessageBox.information(self, "TeamScribe", tr("assist_no_session", self.lang))
+            return
+
+        from . import summarize as summarize_mod
+
+        def fn():
+            return json.dumps(summarize_mod.assist_session(session, request, log=lambda *_: None))
+
+        def done(msg: str) -> None:
+            try:
+                result = json.loads(msg)
+            except ValueError:
+                result = {"action": "answer", "reply": msg}
+            reply = result.get("reply") or ""
+            if result.get("action") == "copy_for_dashboard" and (session / "summary.json").is_file():
+                self._copy_meeting(session, quiet=True)
+                reply = f"{reply}\n{tr('meeting_copied', self.lang)}".strip()
+            elif result.get("action") == "replace_summary":
+                reply = f"{reply}\n{tr('assist_backup_kept', self.lang)}".strip()
+            self.assist_edit.clear()
+            self.status_label.setText(tr("assist_done", self.lang))
+            QMessageBox.information(self, "TeamScribe", reply or tr("assist_done", self.lang))
+
+        self._run_task(fn, tr("assist_working", self.lang, name=export.title_from_name(session)), "", on_done=done)
 
     def _selected_session(self) -> Path | None:
         item = self.session_list.currentItem()
@@ -972,7 +1150,7 @@ class TeamScribeWidget(QWidget):
 
     def _show_session_menu(self, pos) -> None:
         item = self.session_list.itemAt(pos)
-        if item is None:
+        if item is None or item.data(Qt.UserRole) is None:
             return
         # Keep the existing multi-selection (shift/ctrl-click) intact; only
         # fall back to selecting just this item if it isn't already part of
@@ -998,6 +1176,8 @@ class TeamScribeWidget(QWidget):
                 tr("open_notes_action", self.lang),
                 lambda: webbrowser.open(notes_files[0].as_uri()),
             )
+        if (path / "summary.json").is_file():
+            menu.addAction(tr("copy_meeting_action", self.lang), lambda: self._copy_meeting(path))
         menu.addSeparator()
         menu.addAction(tr("delete_action", self.lang), self._delete_selected_sessions)
         menu.exec(self.session_list.mapToGlobal(pos))
@@ -1148,6 +1328,20 @@ class TeamScribeWidget(QWidget):
         if self._record_worker is None:
             self.status_label.setText(tr("record_done", self.lang, name=session.name))
         self.refresh_sessions()
+        if self.settings.get("auto_copy_meeting", True) and (session / "summary.json").is_file():
+            self._copy_meeting(session, quiet=self._record_worker is not None)
+
+    def _copy_meeting(self, session: Path, quiet: bool = False) -> None:
+        """Copy the portable meeting summary (teamscribe.meeting/1), ready to
+        paste into a task manager, and keep a meeting.json in the session."""
+        try:
+            text = export.export_session(session)
+        except Exception as exc:
+            QMessageBox.warning(self, "TeamScribe", tr("copy_meeting_failed", self.lang, error=exc))
+            return
+        QGuiApplication.clipboard().setText(text)
+        if not quiet:
+            self.status_label.setText(tr("meeting_copied", self.lang))
 
     def _on_record_failed(self, message: str) -> None:
         worker = self.sender()
@@ -1163,13 +1357,13 @@ class TeamScribeWidget(QWidget):
 
     # -- summarize / push-tasks --------------------------------------------------
 
-    def _run_task(self, fn, busy_text: str, done_prefix: str) -> None:
+    def _run_task(self, fn, busy_text: str, done_prefix: str, on_done=None) -> None:
         if self._task_worker is not None:
             return
         self.status_label.setText(busy_text)
         self._task_worker = TaskWorker(fn)
         self._task_worker.finished_ok.connect(
-            lambda msg: self._on_task_done(done_prefix, msg)
+            lambda msg: (self._on_task_done(done_prefix, msg), on_done and on_done(msg))
         )
         self._task_worker.failed.connect(self._on_task_failed)
         self._task_worker.start()

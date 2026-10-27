@@ -1377,6 +1377,68 @@ _STRINGS: dict[str, dict[str, str]] = {
         "bn": "নোট ফাইল খুলুন",
         "ur": "نوٹ فائل کھولیں",
     },
+    # Portable meeting export (teamscribe.meeting/1)
+    "copy_meeting_action": {
+        "en": "Copy meeting summary (for a task manager)",
+        "fr": "Copier le compte rendu (pour un gestionnaire de tâches)",
+    },
+    "meeting_copied": {
+        "en": "Summary copied: paste it in your task manager (Ctrl+V).",
+        "fr": "Compte rendu copié : collez-le dans votre gestionnaire de tâches (Ctrl+V).",
+    },
+    "copy_meeting_failed": {
+        "en": "Could not copy the meeting summary:\n{error}",
+        "fr": "Impossible de copier le compte rendu :\n{error}",
+    },
+    "auto_copy_meeting": {
+        "en": "Copy the meeting summary when processing ends",
+        "fr": "Copier le compte rendu à la fin du traitement",
+    },
+    # In-app assistant and search (v2.3.0)
+    "search_placeholder": {
+        "en": "Search meetings (keywords)…",
+        "fr": "Rechercher dans les rencontres (mots-clés)…",
+    },
+    "search_no_result": {
+        "en": "No meeting mentions these words.",
+        "fr": "Aucune rencontre ne contient ces mots.",
+    },
+    "assist_placeholder": {
+        "en": "Ask for an adjustment, e.g. \"Redo the summary without our chat about the watch\" or \"Copy the summary for the Dashboard\"",
+        "fr": "Demander un ajustement, ex. : « Refais le résumé sans notre discussion sur la montre » ou « Copie le résumé pour le Dashboard »",
+    },
+    "assist_send": {
+        "en": "Send to the AI",
+        "fr": "Envoyer à l’IA",
+    },
+    "assist_tooltip": {
+        "en": "The AI can redo or edit the summary (the previous one is kept), copy it for the Dashboard, or answer a question about the meeting.",
+        "fr": "L’IA peut refaire ou modifier le résumé (l’ancien est conservé), le copier pour le Dashboard, ou répondre à une question sur la rencontre.",
+    },
+    "assist_target_selected": {
+        "en": "Meeting: {name}",
+        "fr": "Rencontre visée : {name}",
+    },
+    "assist_target_latest": {
+        "en": "Meeting: {name} (most recent; select another one in the list)",
+        "fr": "Rencontre visée : {name} (la plus récente ; sélectionnez-en une autre dans la liste)",
+    },
+    "assist_no_session": {
+        "en": "No meeting yet.",
+        "fr": "Aucune rencontre pour l’instant.",
+    },
+    "assist_working": {
+        "en": "The AI is working on « {name} »…",
+        "fr": "L’IA travaille sur « {name} »…",
+    },
+    "assist_done": {
+        "en": "Done.",
+        "fr": "C’est fait.",
+    },
+    "assist_backup_kept": {
+        "en": "The previous summary is kept in the session folder (summary.prev-….json).",
+        "fr": "L’ancien résumé est conservé dans le dossier de la session (summary.prev-….json).",
+    },
     # Session summary (summary.md / summary.txt content)
     "summary_title": {
         "en": "Meeting summary",

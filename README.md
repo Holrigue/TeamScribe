@@ -89,6 +89,15 @@ By using TeamScribe, you acknowledge and agree that:
 
 ---
 
+## What's new in v2.3.0
+
+- **Portable meeting export** — when a recording finishes processing, TeamScribe copies a portable summary (`teamscribe.meeting/1` JSON: topics, decisions, action items with sub-steps) to the clipboard and saves it as `meeting.json` in the session. Paste it into any task manager that understands the format. Right-click a session → **Copy meeting summary** to copy it again; turn the automatic copy off in Settings. Only the summary is exported, never audio or transcript.
+- **Action sub-steps** — summaries now list the concrete steps of an action item when they were explicitly discussed (`etapes`).
+- **`teamscribe export`** — CLI equivalent: writes `meeting.json` and copies it to the clipboard.
+- **Ask the AI about a meeting** — a box under the session list takes a free-text request about the selected meeting (or the most recent one): redo or edit its summary (e.g. *"leave out our chat about the watch"*, *"we changed our minds about the websites"*; the previous summary is kept as `summary.prev-<timestamp>.json`), copy it for the Dashboard, or answer a question. CLI: `teamscribe ask "<request>" [session]`.
+- **Newest meetings first** — the session list is sorted by recording date (not by title) and shows the date and a readable title.
+- **Keyword search** — a search box above the list finds which meetings mention given words, in titles, summaries and transcripts (accent-insensitive, all sessions); hover a result to see the excerpt.
+
 ## What's new in v2.2.0
 
 - **Session context menu** — right-click a session in the list to open its file location, its audio file (if kept), or its note file, in addition to deleting it.
@@ -104,10 +113,6 @@ By using TeamScribe, you acknowledge and agree that:
 - **Privacy Mode consent popup** — disabling Privacy Mode now shows a warning dialog explaining that retaining audio files is the user's own choice and responsibility, with a legal disclaimer. The switch reverts automatically if the user cancels.
 - **Legal notice** — a full disclaimer section has been added to the README covering consent obligations, data responsibility, and liability.
 - **AI provider section expanded** — the README now includes a detailed table with default models, required `.env` keys per provider, and a note that keys never leave the user's machine.
-
-## What's new in v2.1.4
-
-- **AI provider switcher in Settings** — a new dropdown in the Settings dialog lets you switch between Claude, ChatGPT, Copilot (Azure OpenAI), and Gemini without editing any file. The choice is saved in `gui_settings.json` and takes priority over the `.env` variable.
 
 ---
 
