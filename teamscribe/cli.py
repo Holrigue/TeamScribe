@@ -201,22 +201,22 @@ def export(
 @app.command()
 def ask(
     request: str = typer.Argument(..., help="What to do, e.g. \"Redo the summary without the chat about the watch\"."),
-    session: str = typer.Argument(None, help="Session id (default: latest)."),
+    sessions: list[str] = typer.Argument(None, help="Session ids (default: latest)."),
 ):
-    """Adjust a meeting with a free-text request: redo/edit its summary
-    (the previous one is kept), copy it for the Dashboard, or answer a question."""
+    """Ask the AI about one or more meetings: redo/edit their summaries (the
+    previous ones are kept), copy them for the Dashboard, or answer a question."""
     from . import export as export_mod
     from . import summarize as summarize_mod
 
-    path = _resolve_session(session)
-    result = summarize_mod.assist_session(path, request, log=console.print)
+    paths = [_resolve_session(s) for s in sessions] if sessions else [_resolve_session(None)]
+    result = summarize_mod.assist_sessions(paths, request, log=console.print)
     console.print(result["reply"] or "Done.")
-    if result["action"] == "copy_for_dashboard" and (path / "summary.json").is_file():
-        text = export_mod.export_session(path)
-        if export_mod.copy_to_clipboard(text):
+    if result["action"] == "copy_for_dashboard":
+        ready = [p for p in paths if (p / "summary.json").is_file()]
+        if ready and export_mod.copy_to_clipboard(export_mod.export_sessions(ready)):
             console.print("[green]Copied to the clipboard[/green] — paste it in the Dashboard (Ctrl+V).")
-    elif result["action"] == "replace_summary":
-        console.print("Previous summary kept as summary.prev-<timestamp>.json.")
+    elif result["action"] == "update_summaries":
+        console.print("Previous summaries kept as summary.prev-<timestamp>.json.")
 
 
 @app.command()

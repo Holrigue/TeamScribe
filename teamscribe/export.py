@@ -29,6 +29,7 @@ from pathlib import Path
 from . import __version__, config
 
 FORMAT = "teamscribe.meeting/1"
+BUNDLE_FORMAT = "teamscribe.meetings/1"
 FILENAME = "meeting.json"
 
 # "<slug>_DD-MM-YYYY_HH-MM-SS" (finalized) or "YYYYMMDD_HHMMSS" (raw).
@@ -115,6 +116,19 @@ def export_session(session: Path) -> str:
     text = json.dumps(build_meeting(session), ensure_ascii=False, indent=2)
     (Path(session) / FILENAME).write_text(text, encoding="utf-8")
     return text
+
+
+def export_sessions(sessions) -> str:
+    """One meeting -> teamscribe.meeting/1; several -> a teamscribe.meetings/1
+    bundle the Dashboard imports one meeting after the other."""
+    docs = [json.loads(export_session(s)) for s in sessions]
+    if len(docs) == 1:
+        return json.dumps(docs[0], ensure_ascii=False, indent=2)
+    return json.dumps(
+        {"format": BUNDLE_FORMAT, "generator": f"TeamScribe {__version__}", "meetings": docs},
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 def copy_to_clipboard(text: str) -> bool:

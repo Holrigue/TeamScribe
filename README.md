@@ -89,6 +89,12 @@ By using TeamScribe, you acknowledge and agree that:
 
 ---
 
+## What's new in v2.3.1
+
+- **Ask the AI about several meetings at once** — select meetings with Ctrl/Shift-click: get a synthesis or an answer across them (shown in a window with a Copy button), update several summaries in one request (each previous summary is kept), or copy them all for the Dashboard as one `teamscribe.meetings/1` bundle (imported one after the other). CLI: `teamscribe ask "<request>" <session> <session>…`.
+- **A calmer design language** — thin single-colour line icons instead of emoji, at most three colours per palette, filled/hollow status marks, a real on/off switch, and three palettes to choose from in Settings: **Retro** (yellowed white, retro orange, pale grey), **Stained glass** (green, velvet brown, bluish black) and **Techno** (black, techno red, white).
+- **Redesigned Settings, context menu and Planner tile** — Settings grouped in cards (startup and recording, AI and language, appearance, tools, updates) with switches; the right-click menu shows the meeting title, line icons and three groups (open, summary actions including "Redo the summary", delete); "Push tasks to Planner" is a full-width tile.
+
 ## What's new in v2.3.0
 
 - **Portable meeting export** — when a recording finishes processing, TeamScribe copies a portable summary (`teamscribe.meeting/1` JSON: topics, decisions, action items with sub-steps) to the clipboard and saves it as `meeting.json` in the session. Paste it into any task manager that understands the format. Right-click a session → **Copy meeting summary** to copy it again; turn the automatic copy off in Settings. Only the summary is exported, never audio or transcript.
@@ -107,12 +113,6 @@ By using TeamScribe, you acknowledge and agree that:
 - **Quick session titles** — right after you stop recording, a fast (≤7s) scan of the first ~45 seconds of audio gives the session a real title immediately, instead of a raw timestamp, while the full transcript/summary keep processing in the background.
 - **Human-readable summary.txt** — each summarized session now also gets a plain-text `summary.txt` (no markdown syntax) alongside `summary.json`/`summary.md`.
 - **Fully localized summaries** — summary section headings and the AI-generated content itself (topics, decisions, action items) are now written in whichever of the 14 UI languages is selected in Settings, not just French.
-
-## What's new in v2.1.5
-
-- **Privacy Mode consent popup** — disabling Privacy Mode now shows a warning dialog explaining that retaining audio files is the user's own choice and responsibility, with a legal disclaimer. The switch reverts automatically if the user cancels.
-- **Legal notice** — a full disclaimer section has been added to the README covering consent obligations, data responsibility, and liability.
-- **AI provider section expanded** — the README now includes a detailed table with default models, required `.env` keys per provider, and a note that keys never leave the user's machine.
 
 ---
 

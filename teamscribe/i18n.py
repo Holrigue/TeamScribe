@@ -1330,8 +1330,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "ur": "حذف کریں…",
     },
     "open_folder_action": {
-        "en": "Open file location",
-        "fr": "Ouvrir l'emplacement du fichier",
+        "en": "Open folder",
+        "fr": "Ouvrir le dossier",
         "es": "Abrir ubicación del archivo",
         "pt": "Abrir local do arquivo",
         "de": "Dateispeicherort öffnen",
@@ -1346,8 +1346,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "ur": "فائل کا مقام کھولیں",
     },
     "open_audio_action": {
-        "en": "Open audio file",
-        "fr": "Ouvrir le fichier audio",
+        "en": "Play the audio",
+        "fr": "Écouter l'audio",
         "es": "Abrir archivo de audio",
         "pt": "Abrir arquivo de áudio",
         "de": "Audiodatei öffnen",
@@ -1362,8 +1362,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "ur": "آڈیو فائل کھولیں",
     },
     "open_notes_action": {
-        "en": "Open note file",
-        "fr": "Ouvrir le fichier note",
+        "en": "Open the notes",
+        "fr": "Ouvrir les notes",
         "es": "Abrir archivo de notas",
         "pt": "Abrir arquivo de notas",
         "de": "Notizdatei öffnen",
@@ -1379,8 +1379,8 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     # Portable meeting export (teamscribe.meeting/1)
     "copy_meeting_action": {
-        "en": "Copy meeting summary (for a task manager)",
-        "fr": "Copier le compte rendu (pour un gestionnaire de tâches)",
+        "en": "Copy for the Dashboard",
+        "fr": "Copier pour le Dashboard",
     },
     "meeting_copied": {
         "en": "Summary copied: paste it in your task manager (Ctrl+V).",
@@ -1416,12 +1416,124 @@ _STRINGS: dict[str, dict[str, str]] = {
         "fr": "L’IA peut refaire ou modifier le résumé (l’ancien est conservé), le copier pour le Dashboard, ou répondre à une question sur la rencontre.",
     },
     "assist_target_selected": {
-        "en": "Meeting: {name}",
-        "fr": "Rencontre visée : {name}",
+        "en": "On: {name}",
+        "fr": "Sur : {name}",
     },
     "assist_target_latest": {
-        "en": "Meeting: {name} (most recent; select another one in the list)",
-        "fr": "Rencontre visée : {name} (la plus récente ; sélectionnez-en une autre dans la liste)",
+        "en": "On: {name} (latest)",
+        "fr": "Sur : {name} (la plus récente)",
+    },
+    "assist_target_many": {
+        "en": "On: {count} selected meetings",
+        "fr": "Sur : {count} rencontres sélectionnées",
+    },
+    "assist_reply_title": {
+        "en": "AI answer",
+        "fr": "Réponse de l’IA",
+    },
+    "copy_btn": {
+        "en": "Copy",
+        "fr": "Copier",
+    },
+    "close_btn": {
+        "en": "Close",
+        "fr": "Fermer",
+    },
+    "copied": {
+        "en": "Copied.",
+        "fr": "Copié.",
+    },
+    "meetings_copied": {
+        "en": "{count} summaries copied: paste them in the Dashboard (Ctrl+V), they import one after the other.",
+        "fr": "{count} comptes rendus copiés : collez-les dans le Dashboard (Ctrl+V), ils s’importent l’un après l’autre.",
+    },
+    "copy_meetings_action": {
+        "en": "Copy the {count} summaries (for the Dashboard)",
+        "fr": "Copier les {count} comptes rendus (pour le Dashboard)",
+    },
+    "assist_updated": {
+        "en": "Updated: {names}. The previous summaries are kept (summary.prev-….json).",
+        "fr": "Mis à jour : {names}. Les anciens résumés sont conservés (summary.prev-….json).",
+    },
+    "settings_heading": {
+        "en": "Settings",
+        "fr": "Paramètres",
+    },
+    "section_recording": {
+        "en": "Startup and recording",
+        "fr": "Démarrage et enregistrement",
+    },
+    "section_ai": {
+        "en": "AI and language",
+        "fr": "IA et langue",
+    },
+    "section_appearance": {
+        "en": "Appearance",
+        "fr": "Apparence",
+    },
+    "section_tools": {
+        "en": "Tools",
+        "fr": "Outils",
+    },
+    "section_updates": {
+        "en": "Updates",
+        "fr": "Mises à jour",
+    },
+    "auto_copy_meeting_hint": {
+        "en": "Ready to paste in the Dashboard (Ctrl+V).",
+        "fr": "Prêt à coller dans le Dashboard (Ctrl+V).",
+    },
+    "planner_tile_title": {
+        "en": "Push tasks to Planner",
+        "fr": "Pousser les tâches vers Planner",
+    },
+    "planner_tile_hint": {
+        "en": "Selected meeting's action items",
+        "fr": "Actions de la rencontre sélectionnée",
+    },
+    "ask_ai_action": {
+        "en": "Ask the AI…",
+        "fr": "Demander à l’IA…",
+    },
+    "resummarize_action": {
+        "en": "Redo the summary",
+        "fr": "Refaire le résumé",
+    },
+    "push_planner_action": {
+        "en": "Push tasks to Planner",
+        "fr": "Pousser les tâches vers Planner",
+    },
+    "palette_label": {
+        "en": "Palette:",
+        "fr": "Palette :",
+    },
+    "palette_retro": {
+        "en": "Retro — yellowed white, retro orange, pale grey",
+        "fr": "Rétro — blanc jauni, orange rétro, gris pâle",
+    },
+    "palette_vitrail": {
+        "en": "Stained glass — green, velvet brown, bluish black",
+        "fr": "Vitrail — vert vitrail, brun velours, noir bleuté",
+    },
+    "palette_techno": {
+        "en": "Techno — black, techno red, white",
+        "fr": "Techno — noir, rouge techno, blanc",
+    },
+    "assist_title": {
+        "en": "Ask the AI",
+        "fr": "Demander à l’IA",
+    },
+    "assist_placeholder_short": {
+        "en": "e.g. Redo the summary without the chat about the watch",
+        "fr": "Ex. : refais le résumé sans la discussion sur la montre",
+    },
+    "session_ready": {
+        "en": "Summary ready",
+        "fr": "Compte rendu prêt",
+    },
+    "session_processing": {
+        "en": "No summary yet (processing or not summarized)",
+        "fr": "Pas encore de compte rendu (traitement en cours ou non résumé)",
     },
     "assist_no_session": {
         "en": "No meeting yet.",

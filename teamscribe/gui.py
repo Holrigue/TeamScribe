@@ -24,6 +24,10 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
+    QFont,
+    QFontMetrics,
+    QPainterPath,
+    QPen,
     QGuiApplication,
     QIcon,
     QKeyEvent,
@@ -46,8 +50,12 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QScrollArea,
+    QWidgetAction,
     QSizeGrip,
     QSlider,
+    QStyle,
+    QStyledItemDelegate,
     QVBoxLayout,
     QWidget,
     QLineEdit,
@@ -157,6 +165,221 @@ class RecordWorker(QThread):
 # machine regardless of installed fonts.
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# Design language: neutral greys, one blue accent, red only for recording and
+# alerts. Icons are thin single-colour line drawings.
+# --------------------------------------------------------------------------
+
+PALETTES = {
+    # 1. Rétro: yellowed white, retro orange, pale grey.
+    "retro": {
+        "root": (244, 238, 220), "border": "#d3cdc1", "text": "#2f2b25", "muted": "#7c776e",
+        "faint": "#b5b0a6", "surface": "#faf6ea", "surface_hover": "#efe8d5", "line": "#dad5ca",
+        "field": "#fbf8f0", "selected": "#f5dfcc", "accent": "#d9662b", "accent_hover": "#c45823",
+        "on_accent": "#ffffff", "red": "#d9662b", "scroll": "#cfcabe", "swatch": ("#f4eedc", "#d9662b", "#c9c6bf"),
+    },
+    # 2. Vitrail: stained-glass green, velvet brown, bluish black.
+    "vitrail": {
+        "root": (17, 23, 28), "border": "#29323a", "text": "#e9e3d9", "muted": "#9aa29d",
+        "faint": "#5d6863", "surface": "#1a2128", "surface_hover": "#222b33", "line": "#2c353d",
+        "field": "#141b21", "selected": "#3b2a25", "accent": "#3e8c73", "accent_hover": "#4aa084",
+        "on_accent": "#ffffff", "red": "#a65c43", "scroll": "#3a444c", "swatch": ("#3e8c73", "#5b3a32", "#11171c"),
+    },
+    # 3. Techno: black, techno red, white.
+    "techno": {
+        "root": (11, 11, 12), "border": "#26262a", "text": "#f4f4f5", "muted": "#8f8f96",
+        "faint": "#56565c", "surface": "#161618", "surface_hover": "#202023", "line": "#2a2a2e",
+        "field": "#111113", "selected": "#2b1517", "accent": "#ff2e3f", "accent_hover": "#ff4a58",
+        "on_accent": "#ffffff", "red": "#ff2e3f", "scroll": "#3a3a3f", "swatch": ("#0b0b0c", "#ff2e3f", "#f4f4f5"),
+    },
+}
+PALETTE_ORDER = ("retro", "vitrail", "techno")
+# Settings saved before the palettes existed used "dark" / "light".
+_LEGACY_THEMES = {"dark": "techno", "light": "retro"}
+
+
+def _plain(label: str) -> str:
+    """Drop a leading glyph (●, ■…) from a translated label: the button
+    already shows a drawn icon."""
+    return label.lstrip("●■◼⏹▶ ").strip()
+
+
+def palette_id(theme: str) -> str:
+    theme = _LEGACY_THEMES.get(theme, theme)
+    return theme if theme in PALETTES else "techno"
+
+
+def palette(theme: str) -> dict:
+    return PALETTES[palette_id(theme)]
+
+
+def _swatch_icon(colors, size: int = 14) -> QIcon:
+    """Three small squares showing a palette in the settings list."""
+    pm = QPixmap(size * 3 + 4, size)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    for i, color in enumerate(colors):
+        p.setPen(QPen(QColor("#888888"), 0.6))
+        p.setBrush(QColor(color))
+        p.drawRoundedRect(QRectF(i * (size + 2) + 0.5, 0.5, size - 1, size - 1), 3, 3)
+    p.end()
+    return QIcon(pm)
+
+
+def _line_icon(name: str, color: str, size: int = 16, stroke: float = 1.5) -> QIcon:
+    """Small monochrome line icons drawn in code (no emoji, no image files)."""
+    scale = 2
+    pm = QPixmap(size * scale, size * scale)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.scale(scale, scale)
+    pen = QPen(QColor(color), stroke)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.NoBrush)
+    s = float(size)
+
+    def pt(x, y):
+        return QPointF(x * s, y * s)
+
+    def poly(*points, close=False):
+        path = QPainterPath(pt(*points[0]))
+        for q in points[1:]:
+            path.lineTo(pt(*q))
+        if close:
+            path.closeSubpath()
+        p.drawPath(path)
+
+    if name == "search":
+        p.drawEllipse(pt(0.44, 0.44), 0.26 * s, 0.26 * s)
+        p.drawLine(pt(0.63, 0.63), pt(0.84, 0.84))
+    elif name == "refresh":
+        p.drawArc(QRectF(0.2 * s, 0.2 * s, 0.6 * s, 0.6 * s), 70 * 16, 290 * 16)
+        poly((0.58, 0.12), (0.62, 0.22), (0.52, 0.27))
+    elif name == "folder":
+        poly((0.14, 0.28), (0.4, 0.28), (0.48, 0.36), (0.86, 0.36), (0.86, 0.78), (0.14, 0.78), close=True)
+    elif name == "pin":
+        poly((0.36, 0.14), (0.64, 0.14), (0.6, 0.4), (0.72, 0.58), (0.28, 0.58), (0.4, 0.4), close=True)
+        p.drawLine(pt(0.5, 0.58), pt(0.5, 0.88))
+    elif name == "gear":
+        p.drawEllipse(pt(0.5, 0.5), 0.12 * s, 0.12 * s)
+        p.drawEllipse(pt(0.5, 0.5), 0.27 * s, 0.27 * s)
+        import math
+        for i in range(8):
+            a = math.radians(i * 45)
+            p.drawLine(pt(0.5 + 0.29 * math.cos(a), 0.5 + 0.29 * math.sin(a)), pt(0.5 + 0.38 * math.cos(a), 0.5 + 0.38 * math.sin(a)))
+    elif name == "power":
+        p.drawArc(QRectF(0.22 * s, 0.24 * s, 0.56 * s, 0.56 * s), 125 * 16, 290 * 16)
+        p.drawLine(pt(0.5, 0.14), pt(0.5, 0.46))
+    elif name == "chevron_down":
+        poly((0.3, 0.42), (0.5, 0.62), (0.7, 0.42))
+    elif name == "chevron_up":
+        poly((0.3, 0.6), (0.5, 0.4), (0.7, 0.6))
+    elif name == "close":
+        p.drawLine(pt(0.3, 0.3), pt(0.7, 0.7))
+        p.drawLine(pt(0.7, 0.3), pt(0.3, 0.7))
+    elif name == "arrow_up":
+        p.drawLine(pt(0.5, 0.8), pt(0.5, 0.22))
+        poly((0.28, 0.44), (0.5, 0.22), (0.72, 0.44))
+    elif name == "rec":
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(color))
+        p.drawEllipse(pt(0.5, 0.5), 0.2 * s, 0.2 * s)
+    elif name == "stop":
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(color))
+        p.drawRoundedRect(QRectF(0.32 * s, 0.32 * s, 0.36 * s, 0.36 * s), 1.5, 1.5)
+    elif name == "tasks":
+        for i, y in enumerate((0.3, 0.5, 0.7)):
+            poly((0.18, y), (0.23, y + 0.05), (0.3, y - 0.04))
+            p.drawLine(pt(0.4, y), pt(0.84, y))
+    elif name == "chevron_right":
+        poly((0.42, 0.3), (0.62, 0.5), (0.42, 0.7))
+    elif name == "play":
+        poly((0.34, 0.24), (0.76, 0.5), (0.34, 0.76), close=True)
+    elif name == "doc":
+        poly((0.26, 0.14), (0.58, 0.14), (0.76, 0.32), (0.76, 0.86), (0.26, 0.86), close=True)
+        p.drawLine(pt(0.36, 0.5), pt(0.66, 0.5))
+        p.drawLine(pt(0.36, 0.66), pt(0.66, 0.66))
+    elif name == "copy":
+        p.drawRoundedRect(QRectF(0.32 * s, 0.32 * s, 0.5 * s, 0.52 * s), 2, 2)
+        poly((0.2, 0.68), (0.2, 0.18), (0.6, 0.18))
+    elif name == "ask":
+        poly((0.16, 0.2), (0.84, 0.2), (0.84, 0.68), (0.46, 0.68), (0.28, 0.84), (0.3, 0.68), (0.16, 0.68), close=True)
+    elif name == "trash":
+        p.drawLine(pt(0.18, 0.26), pt(0.82, 0.26))
+        poly((0.4, 0.26), (0.42, 0.16), (0.58, 0.16), (0.6, 0.26))
+        poly((0.26, 0.26), (0.3, 0.86), (0.7, 0.86), (0.74, 0.26))
+    elif name == "audio":
+        poly((0.16, 0.4), (0.32, 0.4), (0.52, 0.22), (0.52, 0.78), (0.32, 0.6), (0.16, 0.6), close=True)
+        p.drawArc(QRectF(0.5 * s, 0.32 * s, 0.24 * s, 0.36 * s), -60 * 16, 120 * 16)
+    elif name == "busy":
+        p.drawArc(QRectF(0.24 * s, 0.24 * s, 0.52 * s, 0.52 * s), 90 * 16, 270 * 16)
+    p.end()
+    return QIcon(pm)
+
+
+class _Switch(QCheckBox):
+    """A small on/off switch (track + knob) drawn in the theme colours."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedSize(32, 18)
+        self.colors = ("#7b93ff", "#3a3a42", "#ffffff")
+
+    def sizeHint(self) -> QSize:
+        return QSize(32, 18)
+
+    def hitButton(self, pos) -> bool:
+        return self.rect().contains(pos)
+
+    def paintEvent(self, event) -> None:
+        on, off, knob = self.colors
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen)
+        track = QRectF(1, 2, 30, 14)
+        p.setBrush(QColor(on if self.isChecked() else off))
+        p.drawRoundedRect(track, 7, 7)
+        x = track.right() - 7 if self.isChecked() else track.left() + 7
+        p.setBrush(QColor(knob))
+        p.drawEllipse(QPointF(x, track.center().y()), 5, 5)
+        p.end()
+
+
+class _ReplyDialog(QDialog):
+    """Shows the AI's answer, with Copy and Close."""
+
+    def __init__(self, parent, title: str, text: str, lang: str, stylesheet: str):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setObjectName("root")
+        self.setStyleSheet(stylesheet)
+        self.resize(460, 360)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+        body = QPlainTextEdit(text)
+        body.setReadOnly(True)
+        layout.addWidget(body, 1)
+        row = QHBoxLayout()
+        self.note = QLabel("")
+        self.note.setObjectName("muted")
+        copy_btn = QPushButton(tr("copy_btn", lang))
+        copy_btn.setObjectName("primary")
+        copy_btn.clicked.connect(lambda: (QGuiApplication.clipboard().setText(text), self.note.setText(tr("copied", lang))))
+        close_btn = QPushButton(tr("close_btn", lang))
+        close_btn.clicked.connect(self.accept)
+        row.addWidget(self.note, 1)
+        row.addWidget(close_btn)
+        row.addWidget(copy_btn)
+        layout.addLayout(row)
+
+
 def _gear_icon(color: str = "#9aa0a6", size: int = 18) -> QIcon:
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.transparent)
@@ -250,6 +473,92 @@ class TaskWorker(QThread):
 
 
 
+
+# --------------------------------------------------------------------------
+# Session list rows: status dot, title, date underneath
+# --------------------------------------------------------------------------
+
+TITLE_ROLE = Qt.UserRole + 1
+DATE_ROLE = Qt.UserRole + 2
+DONE_ROLE = Qt.UserRole + 3
+
+_MONTHS = {
+    "fr": ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."],
+    "en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+}
+
+
+def _format_when(when, lang: str) -> str:
+    months = _MONTHS.get(lang)
+    if not months:
+        return f"{when:%Y-%m-%d · %H:%M}"
+    if lang == "fr":
+        return f"{when.day} {months[when.month - 1]} {when.year} · {when:%H:%M}"
+    return f"{months[when.month - 1]} {when.day}, {when.year} · {when:%H:%M}"
+
+
+class _SessionDelegate(QStyledItemDelegate):
+    """Two-line rows: a status mark (filled = summary ready, ring = not yet),
+    the meeting title, and its date in small muted text."""
+
+    ROW = 44
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.pal = palette("dark")
+
+    def sizeHint(self, option, index) -> QSize:
+        return QSize(option.rect.width(), self.ROW if index.data(Qt.UserRole) else 34)
+
+    def paint(self, painter: QPainter, option, index) -> None:
+        pal = self.pal
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = option.rect.adjusted(2, 1, -2, -1)
+        selected = bool(option.state & QStyle.State_Selected)
+        if selected:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(pal["selected"]))
+            painter.drawRoundedRect(rect, 7, 7)
+            painter.setBrush(QColor(pal["accent"]))
+            painter.drawRoundedRect(QRectF(rect.left() + 1, rect.top() + 8, 2.5, rect.height() - 16), 1.2, 1.2)
+        elif option.state & QStyle.State_MouseOver:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(pal["surface_hover"]))
+            painter.drawRoundedRect(rect, 7, 7)
+
+        if not index.data(Qt.UserRole):
+            painter.setPen(QColor(pal["muted"]))
+            painter.drawText(rect, Qt.AlignCenter | Qt.TextWordWrap, index.data(Qt.DisplayRole) or "")
+            painter.restore()
+            return
+
+        center = QPointF(rect.left() + 13, rect.top() + 14)
+        if index.data(DONE_ROLE):
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(pal["muted"]))
+            painter.drawEllipse(center, 3, 3)
+        else:
+            painter.setPen(QPen(QColor(pal["faint"]), 1.2))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawEllipse(center, 3, 3)
+
+        left = rect.left() + 24
+        width = rect.width() - 30
+        title_font = QFont(option.font)
+        title_font.setWeight(QFont.Medium)
+        painter.setFont(title_font)
+        painter.setPen(QColor(pal["text"]))
+        title = QFontMetrics(title_font).elidedText(index.data(TITLE_ROLE) or "", Qt.ElideRight, width)
+        painter.drawText(QRectF(left, rect.top() + 4, width, 18), Qt.AlignLeft | Qt.AlignVCenter, title)
+
+        date_font = QFont(option.font)
+        date_font.setPointSizeF(max(7.0, option.font.pointSizeF() - 1.5))
+        painter.setFont(date_font)
+        painter.setPen(QColor(pal["muted"]))
+        painter.drawText(QRectF(left, rect.top() + 22, width, 16), Qt.AlignLeft | Qt.AlignVCenter, index.data(DATE_ROLE) or "")
+        painter.restore()
+
 # --------------------------------------------------------------------------
 # Keyword search over sessions (title, summary, transcript)
 # --------------------------------------------------------------------------
@@ -313,26 +622,98 @@ class SettingsDialog(QDialog):
         self.settings = config.load_gui_settings()
         self.lang = self.settings.get("language", "en")
         self.setWindowTitle(tr("settings_title", self.lang))
+        theme = self.settings.get("theme", "dark")
+        pal = palette(theme)
+        self.setObjectName("root")
+        self.setStyleSheet(TeamScribeWidget._stylesheet(theme, 100))
+        self.resize(420, 640)
 
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
-        self.startup_box = QCheckBox(tr("launch_at_startup", self.lang))
-        self.startup_box.setChecked(shortcuts.is_startup_enabled())
-        layout.addWidget(self.startup_box)
+        head = QHBoxLayout()
+        head.setContentsMargins(18, 16, 18, 8)
+        title = QLabel(tr("settings_heading", self.lang))
+        title.setStyleSheet("font-size: 16px; font-weight: 600;")
+        from . import __version__
+        version_label = QLabel(tr("version_label", self.lang, version=__version__))
+        version_label.setObjectName("muted")
+        head.addWidget(title)
+        head.addStretch()
+        head.addWidget(version_label)
+        outer.addLayout(head)
 
-        self.summarize_box = QCheckBox(tr("auto_summarize", self.lang))
-        self.summarize_box.setChecked(self.settings.get("auto_summarize", True))
-        layout.addWidget(self.summarize_box)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(18, 4, 18, 12)
+        layout.setSpacing(6)
+        scroll.setWidget(body)
+        outer.addWidget(scroll, 1)
 
-        self.copy_meeting_box = QCheckBox(tr("auto_copy_meeting", self.lang))
-        self.copy_meeting_box.setChecked(self.settings.get("auto_copy_meeting", True))
-        layout.addWidget(self.copy_meeting_box)
+        def section(key: str) -> QVBoxLayout:
+            label = QLabel(tr(key, self.lang).upper())
+            label.setObjectName("section")
+            layout.addSpacing(8)
+            layout.addWidget(label)
+            card = QFrame()
+            card.setObjectName("card")
+            inner = QVBoxLayout(card)
+            inner.setContentsMargins(12, 8, 12, 8)
+            inner.setSpacing(6)
+            layout.addWidget(card)
+            return inner
 
-        self.ontop_box = QCheckBox(tr("always_on_top", self.lang))
-        self.ontop_box.setChecked(self.settings.get("always_on_top", True))
-        layout.addWidget(self.ontop_box)
+        def divider(inner: QVBoxLayout) -> None:
+            line = QFrame()
+            line.setObjectName("divider")
+            inner.addWidget(line)
 
-        layout.addWidget(QLabel(tr("ai_provider_label", self.lang)))
+        def switch_row(inner: QVBoxLayout, key: str, checked: bool, hint_key: str = "") -> _Switch:
+            row = QHBoxLayout()
+            texts = QVBoxLayout()
+            texts.setSpacing(1)
+            label = QLabel(tr(key, self.lang))
+            label.setWordWrap(True)
+            texts.addWidget(label)
+            if hint_key:
+                hint = QLabel(tr(hint_key, self.lang))
+                hint.setObjectName("muted")
+                hint.setWordWrap(True)
+                texts.addWidget(hint)
+            switch = _Switch()
+            switch.colors = (pal["accent"], pal["line"], "#ffffff")
+            switch.setChecked(checked)
+            row.addLayout(texts, 1)
+            row.addWidget(switch, 0, Qt.AlignVCenter)
+            inner.addLayout(row)
+            return switch
+
+        def field(inner: QVBoxLayout, key: str, widget, note_keys=()) -> None:
+            label = QLabel(tr(key, self.lang).rstrip(" :"))
+            inner.addWidget(label)
+            inner.addWidget(widget)
+            for nk in note_keys:
+                note = QLabel(tr(nk, self.lang))
+                note.setObjectName("muted")
+                note.setWordWrap(True)
+                inner.addWidget(note)
+
+        # Démarrage et enregistrement
+        rec = section("section_recording")
+        self.startup_box = switch_row(rec, "launch_at_startup", shortcuts.is_startup_enabled())
+        divider(rec)
+        self.ontop_box = switch_row(rec, "always_on_top", self.settings.get("always_on_top", True))
+        divider(rec)
+        self.summarize_box = switch_row(rec, "auto_summarize", self.settings.get("auto_summarize", True))
+        divider(rec)
+        self.copy_meeting_box = switch_row(rec, "auto_copy_meeting", self.settings.get("auto_copy_meeting", True), "auto_copy_meeting_hint")
+
+        # IA et langue
+        ai = section("section_ai")
         self.provider_combo = QComboBox()
         _PROVIDERS = [
             ("anthropic",   "Claude (Anthropic)"),
@@ -347,13 +728,8 @@ class SettingsDialog(QDialog):
             (i for i, (code, _) in enumerate(_PROVIDERS) if code == current_provider), 0
         )
         self.provider_combo.setCurrentIndex(provider_idx)
-        layout.addWidget(self.provider_combo)
-        provider_note = QLabel(tr("ai_provider_note", self.lang))
-        provider_note.setStyleSheet("color: #999; font-size: 11px;")
-        provider_note.setWordWrap(True)
-        layout.addWidget(provider_note)
-
-        layout.addWidget(QLabel(tr("language_label", self.lang)))
+        field(ai, "ai_provider_label", self.provider_combo, ("ai_provider_note",))
+        divider(ai)
         self.lang_combo = QComboBox()
         _LANGUAGES = [
             ("en", "English"),
@@ -377,80 +753,70 @@ class SettingsDialog(QDialog):
             (i for i, (code, _) in enumerate(_LANGUAGES) if code == self.lang), 0
         )
         self.lang_combo.setCurrentIndex(current_idx)
-        layout.addWidget(self.lang_combo)
-        lang_note = QLabel(tr("language_restart_note", self.lang))
-        lang_note.setStyleSheet("color: #999; font-size: 11px;")
-        lang_note.setWordWrap(True)
-        layout.addWidget(lang_note)
-        lang_transcription_note = QLabel(tr("language_transcription_note", self.lang))
-        lang_transcription_note.setStyleSheet("color: #1e88e5; font-size: 10px;")
-        lang_transcription_note.setWordWrap(True)
-        layout.addWidget(lang_transcription_note)
+        field(ai, "language_label", self.lang_combo, ("language_restart_note", "language_transcription_note"))
 
-        layout.addWidget(QLabel(tr("theme_label", self.lang)))
-        theme_row = QHBoxLayout()
-        self.dark_radio = QRadioButton(tr("theme_dark", self.lang))
-        self.light_radio = QRadioButton(tr("theme_light", self.lang))
-        theme_group = QButtonGroup(self)
-        theme_group.addButton(self.dark_radio)
-        theme_group.addButton(self.light_radio)
-        if self.settings.get("theme", "dark") == "light":
-            self.light_radio.setChecked(True)
-        else:
-            self.dark_radio.setChecked(True)
-        theme_row.addWidget(self.dark_radio)
-        theme_row.addWidget(self.light_radio)
-        layout.addLayout(theme_row)
-
+        # Apparence
+        look = section("section_appearance")
+        self.palette_combo = QComboBox()
+        self.palette_combo.setIconSize(QSize(46, 14))
+        for pid in PALETTE_ORDER:
+            self.palette_combo.addItem(_swatch_icon(PALETTES[pid]["swatch"]), tr(f"palette_{pid}", self.lang), pid)
+        self.palette_combo.setCurrentIndex(PALETTE_ORDER.index(palette_id(theme)))
+        field(look, "palette_label", self.palette_combo)
+        divider(look)
         self.glass_label = QLabel()
-        layout.addWidget(self.glass_label)
+        look.addWidget(self.glass_label)
         self.glass_slider = QSlider(Qt.Horizontal)
         self.glass_slider.setRange(20, 100)
         self.glass_slider.setValue(self.settings.get("glass_opacity", 100))
         self.glass_slider.valueChanged.connect(self._update_glass_label)
         self._update_glass_label(self.glass_slider.value())
-        layout.addWidget(self.glass_slider)
+        look.addWidget(self.glass_slider)
 
+        # Outils
+        tools = section("section_tools")
+        tools_row = QHBoxLayout()
         desktop_btn = QPushButton(tr("create_desktop_shortcut", self.lang))
         desktop_btn.clicked.connect(self._create_desktop_shortcut)
-        layout.addWidget(desktop_btn)
-
         devices_btn = QPushButton(tr("check_audio", self.lang))
         devices_btn.clicked.connect(self._run_selftest)
-        layout.addWidget(devices_btn)
+        tools_row.addWidget(desktop_btn)
+        tools_row.addWidget(devices_btn)
+        tools.addLayout(tools_row)
 
-        layout.addWidget(QLabel(tr("update_label", self.lang)))
+        # Mises à jour
+        upd = section("section_updates")
         self.update_status_label = QLabel("…")
-        layout.addWidget(self.update_status_label)
+        self.update_status_label.setWordWrap(True)
+        upd.addWidget(self.update_status_label)
         update_row = QHBoxLayout()
         check_update_btn = QPushButton(tr("check_now", self.lang))
         check_update_btn.clicked.connect(self._check_update_now)
         self.apply_update_btn = QPushButton(tr("update_now", self.lang))
+        self.apply_update_btn.setObjectName("primary")
         self.apply_update_btn.clicked.connect(self._apply_update_now)
         update_row.addWidget(check_update_btn)
         update_row.addWidget(self.apply_update_btn)
-        layout.addLayout(update_row)
+        upd.addLayout(update_row)
         self._refresh_update_status((parent._update_info if parent else None) or {})
+        layout.addStretch()
 
-        buttons_row = QHBoxLayout()
+        footer = QHBoxLayout()
+        footer.setContentsMargins(18, 10, 18, 14)
+        kofi_label = QLabel(tr("kofi_link", self.lang).replace("<a ", f"<a style='color: {pal['muted']};' "))
+        kofi_label.setObjectName("muted")
+        kofi_label.setOpenExternalLinks(True)
         save_btn = QPushButton(tr("save", self.lang))
+        save_btn.setObjectName("primary")
+        save_btn.setDefault(True)
         save_btn.clicked.connect(self.accept)
         cancel_btn = QPushButton(tr("cancel", self.lang))
         cancel_btn.clicked.connect(self.reject)
-        buttons_row.addWidget(save_btn)
-        buttons_row.addWidget(cancel_btn)
-        layout.addLayout(buttons_row)
-
-        kofi_label = QLabel(tr("kofi_link", self.lang))
-        kofi_label.setOpenExternalLinks(True)
-        kofi_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(kofi_label)
-
-        from . import __version__
-        version_label = QLabel(tr("version_label", self.lang, version=__version__))
-        version_label.setStyleSheet("color: #888; font-size: 11px;")
-        version_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(version_label)
+        footer.addWidget(kofi_label)
+        footer.addStretch()
+        footer.addWidget(cancel_btn)
+        footer.addWidget(save_btn)
+        outer.addLayout(footer)
 
     def _refresh_update_status(self, info: dict) -> None:
         if info.get("error") == "not-a-git-checkout":
@@ -547,7 +913,7 @@ class SettingsDialog(QDialog):
         self.settings["auto_summarize"] = self.summarize_box.isChecked()
         self.settings["auto_copy_meeting"] = self.copy_meeting_box.isChecked()
         self.settings["always_on_top"] = self.ontop_box.isChecked()
-        self.settings["theme"] = "light" if self.light_radio.isChecked() else "dark"
+        self.settings["theme"] = self.palette_combo.currentData()
         self.settings["glass_opacity"] = self.glass_slider.value()
         self.settings["llm_provider"] = self.provider_combo.currentData()
         self.settings["language"] = self.lang_combo.currentData()
@@ -575,7 +941,7 @@ class TeamScribeWidget(QWidget):
             Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
         )
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.resize(300, 420)
+        self.resize(320, 620)
 
         self._drag_offset = None
         self._pinned = False
@@ -645,34 +1011,96 @@ class TeamScribeWidget(QWidget):
         # "Liquid glass": the outer panel background gets an alpha channel so
         # the desktop shows through behind it, while buttons/list/text stay
         # fully opaque so the UI remains readable.
+        c = palette(theme)
         alpha = max(0, min(100, glass_opacity)) / 100 * 255
-        if theme == "light":
-            root_bg = f"rgba(242, 242, 242, {alpha:.0f})"
-            return (
-                f"#root {{ background: {root_bg}; border: 1px solid #c8c8c8; border-radius: 8px; }}"
-                "QLabel { color: #1e1e1e; background: transparent; }"
-                "QPushButton { background: #ffffff; color: #1e1e1e; border: 1px solid #bbb;"
-                " border-radius: 4px; padding: 6px; }"
-                "QPushButton:hover { background: #e6e6e6; }"
-                "QPushButton:disabled { color: #999; }"
-                "QListWidget { background: #ffffff; color: #1e1e1e; border: 1px solid #ccc; }"
-            )
-        root_bg = f"rgba(30, 30, 30, {alpha:.0f})"
+        r, g, b = c["root"]
         return (
-            f"#root {{ background: {root_bg}; border: 1px solid #3a3a3a; border-radius: 8px; }}"
-            "QLabel { color: #e0e0e0; background: transparent; }"
-            "QPushButton { background: #2d2d2d; color: #e0e0e0; border: 1px solid #444;"
-            " border-radius: 4px; padding: 6px; }"
-            "QPushButton:hover { background: #3a3a3a; }"
-            "QPushButton:disabled { color: #777; }"
-            "QListWidget { background: #181818; color: #d0d0d0; border: 1px solid #333; }"
+            f"#root {{ background: rgba({r}, {g}, {b}, {alpha:.0f}); border: 1px solid {c['border']}; border-radius: 12px; }}"
+            f"QDialog#root {{ background: rgb({r}, {g}, {b}); border: none; border-radius: 0; }}"
+            f"QLabel {{ color: {c['text']}; background: transparent; }}"
+            f"QLabel#title {{ font-weight: 600; letter-spacing: 0.3px; }}"
+            f"QLabel#muted {{ color: {c['muted']}; font-size: 11px; }}"
+            f"QLabel#section {{ color: {c['muted']}; font-size: 10px; font-weight: 600; letter-spacing: 1.2px; }}"
+            f"QPushButton {{ background: {c['surface']}; color: {c['text']}; border: 1px solid {c['line']};"
+            " border-radius: 8px; padding: 6px 10px; }"
+            f"QPushButton:hover {{ background: {c['surface_hover']}; }}"
+            f"QPushButton:disabled {{ color: {c['faint']}; }}"
+            "QPushButton#icon { background: transparent; border: none; padding: 0; border-radius: 6px; }"
+            f"QPushButton#icon:hover {{ background: {c['surface_hover']}; }}"
+            f"QPushButton#icon:checked {{ background: {c['selected']}; }}"
+            f"QPushButton#link {{ background: transparent; border: none; color: {c['muted']}; padding: 2px 2px; font-size: 11px; }}"
+            f"QPushButton#link:hover {{ color: {c['text']}; }}"
+            f"QPushButton#record {{ background: {c['surface']}; color: {c['text']}; border: 1px solid {c['line']};"
+            " border-radius: 9px; padding: 8px; font-weight: 600; }"
+            f"QPushButton#record:hover {{ background: {c['surface_hover']}; }}"
+            f"QPushButton#recording {{ background: {c['red']}; color: #ffffff; border: none;"
+            " border-radius: 9px; padding: 8px; font-weight: 600; }"
+            f"QPushButton#primary, QPushButton#send {{ background: {c['accent']}; color: {c['on_accent']}; border: none; }}"
+            f"QPushButton#primary:hover, QPushButton#send:hover {{ background: {c['accent_hover']}; }}"
+            "QPushButton#send { border-radius: 8px; padding: 0; min-width: 30px; max-width: 30px; min-height: 30px; max-height: 30px; }"
+            f"QLineEdit, QPlainTextEdit {{ background: {c['field']}; color: {c['text']}; border: 1px solid {c['line']};"
+            f" border-radius: 8px; padding: 6px 8px; selection-background-color: {c['accent']}; }}"
+            f"QLineEdit:focus, QPlainTextEdit:focus {{ border: 1px solid {c['accent']}; }}"
+            f"QListWidget {{ background: {c['field']}; color: {c['text']}; border: 1px solid {c['line']};"
+            " border-radius: 10px; padding: 3px; outline: none; }"
+            f"QComboBox {{ background: {c['field']}; color: {c['text']}; border: 1px solid {c['line']};"
+            " border-radius: 8px; padding: 5px 8px; }"
+            f"QComboBox:focus {{ border: 1px solid {c['accent']}; }}"
+            "QComboBox::drop-down { border: none; width: 22px; }"
+            f"QComboBox QAbstractItemView {{ background: {c['surface']}; color: {c['text']}; border: 1px solid {c['line']};"
+            f" selection-background-color: {c['selected']}; selection-color: {c['text']}; outline: none; padding: 4px; }}"
+            f"QSlider::groove:horizontal {{ height: 4px; background: {c['line']}; border-radius: 2px; }}"
+            f"QSlider::sub-page:horizontal {{ background: {c['accent']}; border-radius: 2px; }}"
+            f"QSlider::handle:horizontal {{ background: {c['accent']}; width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }}"
+            f"QFrame#card {{ background: {c['surface']}; border: 1px solid {c['line']}; border-radius: 10px; }}"
+            "QFrame#card QLabel { background: transparent; }"
+            f"QFrame#divider {{ background: {c['line']}; max-height: 1px; min-height: 1px; border: none; }}"
+            "QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; border: none; }"
+            f"QPushButton#tile {{ background: {c['surface']}; border: 1px solid {c['line']}; border-radius: 10px; padding: 0; text-align: left; }}"
+            f"QPushButton#tile:hover {{ background: {c['surface_hover']}; border: 1px solid {c['faint']}; }}"
+            f"QMenu {{ background: {c['surface']}; color: {c['text']}; border: 1px solid {c['line']}; border-radius: 10px; padding: 6px; }}"
+            "QMenu::item { padding: 6px 18px 6px 8px; border-radius: 6px; }"
+            f"QMenu::item:selected {{ background: {c['selected']}; }}"
+            f"QMenu::item:disabled {{ color: {c['faint']}; }}"
+            f"QMenu::separator {{ height: 1px; background: {c['line']}; margin: 5px 6px; }}"
+            "QMenu::icon { padding-left: 6px; }"
+            f"QLabel#menuHeader {{ color: {c['muted']}; font-size: 10px; font-weight: 600; letter-spacing: 1.2px; padding: 4px 10px 2px 10px; }}"
+            f"QLabel#danger {{ color: {c['red']}; }}"
+            "QScrollBar:vertical { background: transparent; width: 8px; margin: 4px 1px; }"
+            f"QScrollBar::handle:vertical {{ background: {c['scroll']}; border-radius: 3px; min-height: 24px; }}"
+            "QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page { background: none; height: 0; }"
         )
 
     def _apply_theme(self) -> None:
         theme = self.settings.get("theme", "dark")
         glass_opacity = self.settings.get("glass_opacity", 100)
+        self.pal = palette(theme)
         self.root_frame.setStyleSheet(self._stylesheet(theme, glass_opacity))
-        self.size_grip.set_color("#888888" if theme == "light" else "#aaaaaa")
+        self._delegate.pal = self.pal
+        self.session_list.viewport().update()
+        self.size_grip.set_color(self.pal["faint"])
+        self.privacy_switch.colors = (self.pal["accent"], self.pal["line"], "#ffffff")
+        self.privacy_switch.update()
+        self._apply_icons()
+
+    def _apply_icons(self) -> None:
+        pal = self.pal
+        ic = lambda name, color=None, size=16: _line_icon(name, color or pal["muted"], size)
+        self.pin_btn.setIcon(ic("pin"))
+        self.settings_btn.setIcon(ic("gear"))
+        self.restart_btn.setIcon(ic("power"))
+        self.minimize_btn.setIcon(ic("chevron_up" if self._minimized else "chevron_down"))
+        self.close_btn.setIcon(ic("close"))
+        self.refresh_btn.setIcon(ic("refresh"))
+        self.folder_btn.setIcon(ic("folder"))
+        self._search_action.setIcon(ic("search"))
+        self.assist_btn.setIcon(ic("arrow_up", pal["on_accent"]))
+        self.planner_icon.setPixmap(_line_icon("tasks", pal["text"], 18).pixmap(18, 18))
+        self.planner_chevron.setPixmap(_line_icon("chevron_right", pal["faint"], 14).pixmap(14, 14))
+        recording = self.record_btn.objectName() == "recording"
+        self.record_btn.setIcon(ic("stop" if recording else "rec", "#ffffff" if recording else pal["red"]))
+        self.status_dot.setStyleSheet(f"color: {pal['red'] if recording else pal['faint']}; font-size: 10px;")
+        self._set_mini_record_btn_color(recording)
 
     def _build_ui(self) -> None:
         root = QFrame(self)
@@ -688,46 +1116,45 @@ class TeamScribeWidget(QWidget):
         # Title bar (drag handle + close)
         title_row = QHBoxLayout()
         self.status_dot = QLabel("●")
-        self.status_dot.setStyleSheet("color: #666; font-size: 14px;")
         title = QLabel("TeamScribe")
-        title.setStyleSheet("font-weight: bold;")
-        self.pin_btn = QPushButton("📌")
+        title.setObjectName("title")
+        self.pin_btn = QPushButton()
         self.pin_btn.setFixedSize(24, 24)
-        self.pin_btn.setStyleSheet("font-size: 13px;")
         self.pin_btn.setCheckable(True)
         self.pin_btn.setToolTip(tr("pin_tooltip_off", self.lang))
         self.pin_btn.toggled.connect(self.set_pinned)
         self.settings_btn = QPushButton()
-        self.settings_btn.setIcon(_gear_icon(size=18))
-        self.settings_btn.setIconSize(QSize(18, 18))
         self.settings_btn.setFixedSize(24, 24)
         self.settings_btn.setToolTip(tr("settings_tooltip", self.lang))
         self.settings_btn.clicked.connect(self.open_settings)
         self.update_badge = QLabel(self.settings_btn)
         self.update_badge.setFixedSize(8, 8)
         self.update_badge.setStyleSheet(
-            "background: #e53935; border-radius: 4px; border: 1px solid #1e1e1e;"
+            "background: #e5484d; border-radius: 4px; border: none;"
         )
         self.update_badge.move(16, -1)
         self.update_badge.hide()
-        restart_btn = QPushButton("⟳")
-        restart_btn.setFixedSize(22, 22)
+        self.restart_btn = restart_btn = QPushButton()
+        restart_btn.setFixedSize(24, 24)
         restart_btn.setToolTip(tr("restart_tooltip", self.lang))
         restart_btn.clicked.connect(self.restart_app)
-        self.minimize_btn = QPushButton("▼")
-        self.minimize_btn.setFixedSize(22, 22)
+        self.minimize_btn = QPushButton()
+        self.minimize_btn.setFixedSize(24, 24)
         self.minimize_btn.setToolTip(tr("minimize_tooltip_collapse", self.lang))
         self.minimize_btn.clicked.connect(self.toggle_minimize)
-        close_btn = QPushButton("×")
-        close_btn.setFixedSize(22, 22)
+        self.close_btn = close_btn = QPushButton()
+        close_btn.setFixedSize(24, 24)
         close_btn.clicked.connect(self.close)
-        self.mini_record_btn = QPushButton("●")
-        self.mini_record_btn.setFixedSize(22, 22)
+        self.mini_record_btn = QPushButton()
+        self.mini_record_btn.setObjectName("icon")
+        self.mini_record_btn.setFixedSize(24, 24)
         self.mini_record_btn.setToolTip(tr("record_start", self.lang))
         self.mini_record_btn.clicked.connect(self.toggle_recording)
         self.mini_record_btn.hide()
-        self._set_mini_record_btn_color(recording=False)
 
+        for btn in (self.pin_btn, self.settings_btn, restart_btn, self.minimize_btn, close_btn):
+            btn.setObjectName("icon")
+        title_row.setSpacing(4)
         title_row.addWidget(self.pin_btn)
         title_row.addWidget(self.settings_btn)
         title_row.addWidget(self.status_dot)
@@ -745,40 +1172,65 @@ class TeamScribeWidget(QWidget):
         content_layout = QVBoxLayout(self.content_widget)
         content_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.status_label = QLabel(tr("status_ready", self.lang))
-        self.status_label.setStyleSheet("color: #999;")
-        content_layout.addWidget(self.status_label)
+        content_layout.setSpacing(8)
 
+        # Status + privacy switch on one line.
+        status_row = QHBoxLayout()
+        self.status_label = QLabel(tr("status_ready", self.lang))
+        self.status_label.setObjectName("muted")
+        self.status_label.setWordWrap(True)
         # Privacy mode switch: when ON the raw audio file is deleted after
         # transcription so only the text transcript is kept.
-        privacy_row = QHBoxLayout()
         privacy_label = QLabel(tr("privacy_mode_label", self.lang))
-        privacy_label.setStyleSheet("font-size: 12px;")
-        self.privacy_switch = QCheckBox()
+        privacy_label.setObjectName("muted")
+        self.privacy_switch = _Switch()
         # Privacy mode ON by default (keep_audio defaults to False now)
         privacy_on_default = not self.settings.get("keep_audio", False)
         self.privacy_switch.setChecked(privacy_on_default)
         self.privacy_switch.setToolTip(tr("privacy_mode_tooltip", self.lang))
         self.privacy_switch.toggled.connect(self.set_keep_audio)
+        status_row.addWidget(self.status_label, 1)
+        status_row.addWidget(privacy_label)
+        status_row.addWidget(self.privacy_switch)
+        content_layout.addLayout(status_row)
         self.privacy_hint = QLabel(tr("privacy_mode_hint", self.lang))
-        self.privacy_hint.setStyleSheet("color: #1e88e5; font-size: 10px;")
+        self.privacy_hint.setObjectName("muted")
         self.privacy_hint.setVisible(False)
-        privacy_row.addWidget(privacy_label)
-        privacy_row.addStretch()
-        privacy_row.addWidget(self.privacy_switch)
-        content_layout.addLayout(privacy_row)
         content_layout.addWidget(self.privacy_hint)
         self.set_keep_audio(privacy_on_default)
 
         # Record button
-        self.record_btn = QPushButton(tr("record_start", self.lang))
+        self.record_btn = QPushButton(_plain(tr("record_start", self.lang)))
+        self.record_btn.setObjectName("record")
+        self.record_btn.setMinimumHeight(36)
         self.record_btn.clicked.connect(self.toggle_recording)
         self._set_record_btn_color(recording=False)
         content_layout.addWidget(self.record_btn)
 
-        content_layout.addWidget(QLabel(tr("recent_sessions", self.lang)))
+        # Meetings: section title with small refresh / folder buttons.
+        sessions_head = QHBoxLayout()
+        sessions_title = QLabel(tr("recent_sessions", self.lang).rstrip(" :").upper())
+        sessions_title.setObjectName("section")
+        self.refresh_btn = refresh_btn = QPushButton()
+        refresh_btn.setObjectName("icon")
+        refresh_btn.setFixedSize(24, 22)
+        refresh_btn.setToolTip(tr("refresh_list_btn", self.lang))
+        refresh_btn.clicked.connect(self.refresh_sessions)
+        self.folder_btn = open_folder_btn = QPushButton()
+        open_folder_btn.setObjectName("icon")
+        open_folder_btn.setFixedSize(24, 22)
+        open_folder_btn.setToolTip(tr("open_folder_btn", self.lang))
+        open_folder_btn.clicked.connect(self.open_sessions_folder)
+        sessions_head.addWidget(sessions_title)
+        sessions_head.addStretch()
+        sessions_head.addWidget(refresh_btn)
+        sessions_head.addWidget(open_folder_btn)
+        content_layout.addSpacing(4)
+        content_layout.addLayout(sessions_head)
+
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText(tr("search_placeholder", self.lang))
+        self._search_action = self.search_edit.addAction(QIcon(), QLineEdit.LeadingPosition)
         self.search_edit.setClearButtonEnabled(True)
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
@@ -786,45 +1238,74 @@ class TeamScribeWidget(QWidget):
         self._search_timer.timeout.connect(self.refresh_sessions)
         self.search_edit.textChanged.connect(lambda _t: self._search_timer.start())
         content_layout.addWidget(self.search_edit)
+
         self.session_list = QListWidget()
+        self._delegate = _SessionDelegate(self.session_list)
+        self.session_list.setItemDelegate(self._delegate)
+        self.session_list.setMouseTracking(True)
+        self.session_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.session_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
+        # Always room for at least 5 meetings.
+        self.session_list.setMinimumHeight(5 * _SessionDelegate.ROW + 10)
         self.session_list.setSelectionMode(QListWidget.ExtendedSelection)
         self.session_list.itemDoubleClicked.connect(self._open_session_folder)
         self.session_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.session_list.customContextMenuRequested.connect(self._show_session_menu)
         self.session_list.installEventFilter(self)
-        content_layout.addWidget(self.session_list)
+        content_layout.addWidget(self.session_list, 1)
 
         # In-app adjustments: one request about the selected meeting (or the
         # most recent one). The AI redoes/edits the summary, copies it for
         # the Dashboard, or answers a question.
+        assist_title = QLabel(tr("assist_title", self.lang).upper())
+        assist_title.setObjectName("section")
+        content_layout.addSpacing(4)
+        content_layout.addWidget(assist_title)
         self.assist_target = QLabel()
-        self.assist_target.setStyleSheet("color: #999; font-size: 11px;")
-        self.assist_target.setWordWrap(True)
+        self.assist_target.setObjectName("muted")
         self.session_list.itemSelectionChanged.connect(self._update_assist_target)
-        self.assist_edit = QPlainTextEdit()
-        self.assist_edit.setPlaceholderText(tr("assist_placeholder", self.lang))
-        self.assist_edit.setFixedHeight(64)
-        self.assist_btn = QPushButton(tr("assist_send", self.lang))
-        self.assist_btn.setToolTip(tr("assist_tooltip", self.lang))
+        assist_row = QHBoxLayout()
+        assist_row.setSpacing(6)
+        self.assist_edit = QLineEdit()
+        self.assist_edit.setPlaceholderText(tr("assist_placeholder_short", self.lang))
+        self.assist_edit.setToolTip(tr("assist_tooltip", self.lang))
+        self.assist_edit.returnPressed.connect(self.run_assist)
+        self.assist_btn = QPushButton()
+        self.assist_btn.setObjectName("send")
+        self.assist_btn.setToolTip(tr("assist_send", self.lang))
         self.assist_btn.clicked.connect(self.run_assist)
+        assist_row.addWidget(self.assist_edit, 1)
+        assist_row.addWidget(self.assist_btn)
+        content_layout.addLayout(assist_row)
         content_layout.addWidget(self.assist_target)
-        content_layout.addWidget(self.assist_edit)
-        content_layout.addWidget(self.assist_btn)
 
-        actions_row = QHBoxLayout()
-        self.push_btn = QPushButton(tr("push_planner_btn", self.lang))
+        # Planner push: secondary, as a discreet link.
+        # Planner push: a long, low tile (icon, title + hint, chevron).
+        self.push_btn = QPushButton()
+        self.push_btn.setObjectName("tile")
+        self.push_btn.setCursor(Qt.PointingHandCursor)
+        self.push_btn.setMinimumHeight(48)
+        self.push_btn.setToolTip(tr("planner_tile_hint", self.lang))
         self.push_btn.clicked.connect(self.run_push_tasks)
-        actions_row.addWidget(self.push_btn)
-        content_layout.addLayout(actions_row)
-
-        bottom_row = QHBoxLayout()
-        refresh_btn = QPushButton(tr("refresh_list_btn", self.lang))
-        refresh_btn.clicked.connect(self.refresh_sessions)
-        open_folder_btn = QPushButton(tr("open_folder_btn", self.lang))
-        open_folder_btn.clicked.connect(self.open_sessions_folder)
-        bottom_row.addWidget(refresh_btn)
-        bottom_row.addWidget(open_folder_btn)
-        content_layout.addLayout(bottom_row)
+        tile = QHBoxLayout(self.push_btn)
+        tile.setContentsMargins(12, 6, 10, 6)
+        tile.setSpacing(10)
+        self.planner_icon = QLabel()
+        texts = QVBoxLayout()
+        texts.setSpacing(0)
+        tile_title = QLabel(tr("planner_tile_title", self.lang))
+        tile_hint = QLabel(tr("planner_tile_hint", self.lang))
+        tile_hint.setObjectName("muted")
+        texts.addWidget(tile_title)
+        texts.addWidget(tile_hint)
+        self.planner_chevron = QLabel()
+        for w in (self.planner_icon, tile_title, tile_hint, self.planner_chevron):
+            w.setAttribute(Qt.WA_TransparentForMouseEvents)
+        tile.addWidget(self.planner_icon)
+        tile.addLayout(texts, 1)
+        tile.addWidget(self.planner_chevron)
+        content_layout.addSpacing(2)
+        content_layout.addWidget(self.push_btn)
 
         # Frameless windows have no native resize border, so a visible grip
         # in the corner is what lets the user actually resize the widget.
@@ -835,12 +1316,13 @@ class TeamScribeWidget(QWidget):
         self.size_grip = _GripDots(self, "#999999")
         self.size_grip.setFixedSize(16, 16)
         grip_row = QHBoxLayout()
+        grip_row.setContentsMargins(0, 0, 0, 0)
         grip_row.addStretch()
         grip_row.addWidget(self.size_grip, 0, Qt.AlignBottom | Qt.AlignRight)
         content_layout.addLayout(grip_row)
 
         layout.addWidget(self.content_widget)
-        self.setMinimumSize(240, 320)
+        self.setMinimumSize(260, 560)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if not self._pinned and event.button() == Qt.LeftButton:
@@ -859,18 +1341,9 @@ class TeamScribeWidget(QWidget):
         self._set_minimized(not self._minimized)
 
     def _set_mini_record_btn_color(self, recording: bool) -> None:
-        if recording:
-            self.mini_record_btn.setText("■")
-            self.mini_record_btn.setStyleSheet(
-                "background: #c0392b; color: white; border: 1px solid #e74c3c; border-radius: 4px;"
-            )
-            self.mini_record_btn.setToolTip(tr("record_stop", self.lang))
-        else:
-            self.mini_record_btn.setText("●")
-            self.mini_record_btn.setStyleSheet(
-                "background: #2e8b3d; color: white; border: 1px solid #3fae52; border-radius: 4px;"
-            )
-            self.mini_record_btn.setToolTip(tr("record_start", self.lang))
+        pal = getattr(self, "pal", palette("dark"))
+        self.mini_record_btn.setIcon(_line_icon("stop" if recording else "rec", pal["red"]))
+        self.mini_record_btn.setToolTip(tr("record_stop" if recording else "record_start", self.lang))
 
     def _set_minimized(self, minimized: bool, save: bool = True) -> None:
         self._minimized = minimized
@@ -879,7 +1352,7 @@ class TeamScribeWidget(QWidget):
             self.content_widget.hide()
             self.setMinimumSize(0, 0)
             self.setMaximumSize(16777215, 16777215)
-            self.minimize_btn.setText("▲")
+            self.minimize_btn.setIcon(_line_icon("chevron_up", self.pal["muted"]))
             self.minimize_btn.setToolTip(tr("minimize_tooltip_expand", self.lang))
             self.mini_record_btn.show()
             # Let the layout recalculate with content hidden, then force the
@@ -888,12 +1361,12 @@ class TeamScribeWidget(QWidget):
             self.resize(self.width(), self.sizeHint().height())
         else:
             self.mini_record_btn.hide()
-            self.setMinimumSize(240, 320)
+            self.setMinimumSize(260, 560)
             self.setMaximumSize(16777215, 16777215)
             self.content_widget.show()
             if self._expanded_size is not None:
                 self.resize(self._expanded_size)
-            self.minimize_btn.setText("▼")
+            self.minimize_btn.setIcon(_line_icon("chevron_down", self.pal["muted"]))
             self.minimize_btn.setToolTip(tr("minimize_tooltip_collapse", self.lang))
         if save:
             self.settings["minimized"] = minimized
@@ -901,10 +1374,6 @@ class TeamScribeWidget(QWidget):
 
     def set_pinned(self, pinned: bool) -> None:
         self._pinned = pinned
-        self.pin_btn.setStyleSheet(
-            "font-size: 13px; background: #2e8b3d; border: 1px solid #3fae52;"
-            if pinned else "font-size: 13px;"
-        )
         self.pin_btn.setToolTip(
             tr("pin_tooltip_on", self.lang) if pinned else tr("pin_tooltip_off", self.lang)
         )
@@ -1050,10 +1519,14 @@ class TeamScribeWidget(QWidget):
             # summary.json keeps a fixed name regardless of the contextual
             # rename in naming.finalize_session, so it's a stable signal.
             has_summary = (path / "summary.json").is_file()
-            label = f"{'✓' if has_summary else '…'}  {when:%Y-%m-%d %H:%M}  {export.title_from_name(path)}"
-            item = QListWidgetItem(label)
+            title = export.title_from_name(path)
+            item = QListWidgetItem(title)
             item.setData(Qt.UserRole, str(path))
-            item.setToolTip(tooltip)
+            item.setData(TITLE_ROLE, title)
+            item.setData(DATE_ROLE, _format_when(when, self.lang))
+            item.setData(DONE_ROLE, has_summary)
+            status = tr("session_ready" if has_summary else "session_processing", self.lang)
+            item.setToolTip(f"{tooltip}\n{status}")
             self.session_list.addItem(item)
             if str(path) in selected:
                 item.setSelected(True)
@@ -1064,14 +1537,13 @@ class TeamScribeWidget(QWidget):
             self.session_list.addItem(empty)
         self._update_assist_target()
 
-    def _assist_session(self) -> Path | None:
-        """The meeting the assistant works on: the selection, else the most
-        recent session."""
+    def _assist_sessions(self) -> list[Path]:
+        """The meetings the AI works on: the selection, else the most recent."""
         chosen = [p for p in self._selected_sessions() if p]
         if chosen:
-            return chosen[0]
+            return chosen
         if not config.SESSIONS_DIR.is_dir():
-            return None
+            return []
         hidden = set(self.settings.get("hidden_sessions", []))
         dated = []
         for p in config.SESSIONS_DIR.glob("*"):
@@ -1080,50 +1552,79 @@ class TeamScribeWidget(QWidget):
                     dated.append((export.session_date(p), p))
                 except (OSError, ValueError):
                     continue
-        return max(dated, key=lambda x: x[0])[1] if dated else None
+        return [max(dated, key=lambda x: x[0])[1]] if dated else []
 
     def _update_assist_target(self) -> None:
         if not hasattr(self, "assist_target"):
             return
-        target = self._assist_session()
+        targets = self._assist_sessions()
         explicit = bool(self._selected_sessions())
-        if target is None:
+        if not targets:
             self.assist_target.setText(tr("assist_no_session", self.lang))
+            self.assist_target.setToolTip("")
+        elif len(targets) > 1:
+            self.assist_target.setText(tr("assist_target_many", self.lang, count=len(targets)))
+            self.assist_target.setToolTip("\n".join(export.title_from_name(p) for p in targets))
         else:
             key = "assist_target_selected" if explicit else "assist_target_latest"
-            self.assist_target.setText(tr(key, self.lang, name=export.title_from_name(target)))
+            name = export.title_from_name(targets[0])
+            self.assist_target.setToolTip(name)
+            name = QFontMetrics(self.assist_target.font()).elidedText(name, Qt.ElideRight, max(80, self.assist_target.width() - 110))
+            self.assist_target.setText(tr(key, self.lang, name=name))
+
+    def _copy_meetings(self, sessions: list[Path]) -> None:
+        """Copy one meeting (teamscribe.meeting/1) or several (a bundle the
+        Dashboard imports one after the other)."""
+        ready = [s for s in sessions if (s / "summary.json").is_file()]
+        if not ready:
+            return
+        try:
+            text = export.export_sessions(ready)
+        except Exception as exc:
+            QMessageBox.warning(self, "TeamScribe", tr("copy_meeting_failed", self.lang, error=exc))
+            return
+        QGuiApplication.clipboard().setText(text)
+        self.status_label.setText(
+            tr("meeting_copied", self.lang) if len(ready) == 1 else tr("meetings_copied", self.lang, count=len(ready))
+        )
+
+    def _show_reply(self, text: str) -> None:
+        theme = self.settings.get("theme", "dark")
+        _ReplyDialog(self, tr("assist_reply_title", self.lang), text, self.lang, self._stylesheet(theme, 100)).exec()
 
     def run_assist(self) -> None:
-        request = self.assist_edit.toPlainText().strip()
+        request = self.assist_edit.text().strip()
         if not request:
             self.assist_edit.setFocus()
             return
-        session = self._assist_session()
-        if session is None:
+        sessions = self._assist_sessions()
+        if not sessions:
             QMessageBox.information(self, "TeamScribe", tr("assist_no_session", self.lang))
             return
 
         from . import summarize as summarize_mod
 
         def fn():
-            return json.dumps(summarize_mod.assist_session(session, request, log=lambda *_: None))
+            return json.dumps(summarize_mod.assist_sessions(sessions, request, log=lambda *_: None))
 
         def done(msg: str) -> None:
             try:
                 result = json.loads(msg)
             except ValueError:
-                result = {"action": "answer", "reply": msg}
-            reply = result.get("reply") or ""
-            if result.get("action") == "copy_for_dashboard" and (session / "summary.json").is_file():
-                self._copy_meeting(session, quiet=True)
-                reply = f"{reply}\n{tr('meeting_copied', self.lang)}".strip()
-            elif result.get("action") == "replace_summary":
-                reply = f"{reply}\n{tr('assist_backup_kept', self.lang)}".strip()
+                result = {"action": "answer", "reply": msg, "updated": []}
+            reply = result.get("reply") or tr("assist_done", self.lang)
             self.assist_edit.clear()
             self.status_label.setText(tr("assist_done", self.lang))
-            QMessageBox.information(self, "TeamScribe", reply or tr("assist_done", self.lang))
+            if result.get("action") == "copy_for_dashboard":
+                self._copy_meetings(sessions)
+            elif result.get("action") == "update_summaries":
+                names = ", ".join(export.title_from_name(Path(n)) for n in result.get("updated") or [])
+                self._show_reply(f"{reply}\n\n{tr('assist_updated', self.lang, names=names)}")
+            else:
+                self._show_reply(reply)
 
-        self._run_task(fn, tr("assist_working", self.lang, name=export.title_from_name(session)), "", on_done=done)
+        label = export.title_from_name(sessions[0]) if len(sessions) == 1 else tr("assist_target_many", self.lang, count=len(sessions))
+        self._run_task(fn, tr("assist_working", self.lang, name=label), "", on_done=done)
 
     def _selected_session(self) -> Path | None:
         item = self.session_list.currentItem()
@@ -1158,28 +1659,52 @@ class TeamScribeWidget(QWidget):
         if item not in self.session_list.selectedItems():
             self.session_list.setCurrentItem(item)
         path = Path(item.data(Qt.UserRole))
+        selected = self._selected_sessions()
+        many = len(selected) > 1
+        pal = self.pal
+        ic = lambda name, color=None: _line_icon(name, color or pal["muted"], 16)
         menu = QMenu(self)
-        menu.addAction(tr("open_folder_action", self.lang), lambda: os.startfile(str(path)))
-        audio_files = list(path.glob("*.wav"))
-        if audio_files:
-            menu.addAction(
-                tr("open_audio_action", self.lang), lambda: os.startfile(str(audio_files[0]))
+        menu.setStyleSheet(self.root_frame.styleSheet())
+        menu.setAttribute(Qt.WA_TranslucentBackground, True)
+        menu.setWindowFlags(menu.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+
+        def header(text: str) -> None:
+            label = QLabel(text.upper())
+            label.setObjectName("menuHeader")
+            action = QWidgetAction(menu)
+            action.setDefaultWidget(label)
+            action.setEnabled(False)
+            menu.addAction(action)
+
+        title = export.title_from_name(path) if not many else tr("assist_target_many", self.lang, count=len(selected)).split(": ", 1)[-1]
+        header(QFontMetrics(menu.font()).elidedText(title, Qt.ElideRight, 220))
+        if not many:
+            menu.addAction(ic("folder"), tr("open_folder_action", self.lang), lambda: os.startfile(str(path)))
+            audio_files = list(path.glob("*.wav"))
+            if audio_files:
+                menu.addAction(ic("audio"), tr("open_audio_action", self.lang), lambda: os.startfile(str(audio_files[0])))
+            notes_files = (
+                list(path.glob("*_notes.txt"))
+                or list(path.glob("summary.txt"))
+                or list(path.glob("*_notes.md"))
+                or list(path.glob("summary.md"))
             )
-        notes_files = (
-            list(path.glob("*_notes.txt"))
-            or list(path.glob("summary.txt"))
-            or list(path.glob("*_notes.md"))
-            or list(path.glob("summary.md"))
-        )
-        if notes_files:
-            menu.addAction(
-                tr("open_notes_action", self.lang),
-                lambda: webbrowser.open(notes_files[0].as_uri()),
-            )
-        if (path / "summary.json").is_file():
-            menu.addAction(tr("copy_meeting_action", self.lang), lambda: self._copy_meeting(path))
+            if notes_files:
+                menu.addAction(ic("doc"), tr("open_notes_action", self.lang), lambda: webbrowser.open(notes_files[0].as_uri()))
+            menu.addSeparator()
+
+        chosen = [p for p in selected if (p / "summary.json").is_file()]
+        if len(chosen) > 1:
+            menu.addAction(ic("copy"), tr("copy_meetings_action", self.lang, count=len(chosen)), lambda: self._copy_meetings(chosen))
+        elif (path / "summary.json").is_file():
+            menu.addAction(ic("copy"), tr("copy_meeting_action", self.lang), lambda: self._copy_meeting(path))
+        menu.addAction(ic("ask"), tr("ask_ai_action", self.lang), lambda: (self.assist_edit.setFocus(), self.assist_edit.selectAll()))
+        if not many:
+            redo = menu.addAction(ic("refresh"), tr("resummarize_action", self.lang), self.run_summarize)
+            redo.setEnabled((path / "transcript.txt").is_file())
+            menu.addAction(ic("tasks"), tr("push_planner_action", self.lang), self.run_push_tasks)
         menu.addSeparator()
-        menu.addAction(tr("delete_action", self.lang), self._delete_selected_sessions)
+        menu.addAction(ic("trash", pal["red"]), tr("delete_action", self.lang), self._delete_selected_sessions)
         menu.exec(self.session_list.mapToGlobal(pos))
 
     def _delete_selected_sessions(self) -> None:
@@ -1240,16 +1765,12 @@ class TeamScribeWidget(QWidget):
     # -- recording --------------------------------------------------
 
     def _set_record_btn_color(self, recording: bool) -> None:
-        if recording:
-            self.record_btn.setStyleSheet(
-                "background: #c0392b; color: white; border: 1px solid #e74c3c;"
-                " border-radius: 4px; padding: 6px;"
-            )
-        else:
-            self.record_btn.setStyleSheet(
-                "background: #2e8b3d; color: white; border: 1px solid #3fae52;"
-                " border-radius: 4px; padding: 6px;"
-            )
+        self.record_btn.setObjectName("recording" if recording else "record")
+        # Re-polish so the stylesheet rule for the new object name applies.
+        self.record_btn.style().unpolish(self.record_btn)
+        self.record_btn.style().polish(self.record_btn)
+        if hasattr(self, "pal"):
+            self._apply_icons()
 
     def toggle_recording(self) -> None:
         if self._record_worker is not None:
@@ -1273,20 +1794,18 @@ class TeamScribeWidget(QWidget):
         self._background_workers.append(worker)
         worker.start()
 
-        self.record_btn.setText(tr("record_stop", self.lang))
+        self.record_btn.setText(_plain(tr("record_stop", self.lang)))
         self._set_record_btn_color(recording=True)
         self._set_mini_record_btn_color(recording=True)
-        self.status_dot.setStyleSheet("color: #e53935; font-size: 14px;")
         self.status_label.setText(tr("listening", self.lang, time="00:00:00"))
 
     def _unblock_record_button(self) -> None:
         self._record_worker = None
         self.record_btn.setEnabled(True)
         self.mini_record_btn.setEnabled(True)
-        self.record_btn.setText(tr("record_start", self.lang))
+        self.record_btn.setText(_plain(tr("record_start", self.lang)))
         self._set_record_btn_color(recording=False)
         self._set_mini_record_btn_color(recording=False)
-        self.status_dot.setStyleSheet("color: #666; font-size: 14px;")
 
     def _on_phase(self, phase: str) -> None:
         _phase_keys = {
@@ -1307,7 +1826,7 @@ class TeamScribeWidget(QWidget):
             text = tr(_phase_keys.get(phase, phase), self.lang)
             self.status_label.setText(text)
             self.mini_record_btn.setToolTip(text)
-            self.mini_record_btn.setText("⟳")
+            self.mini_record_btn.setIcon(_line_icon("busy", self.pal["muted"]))
 
     def _on_tick(self, elapsed: float) -> None:
         if self.sender() is not self._record_worker:
