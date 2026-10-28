@@ -605,6 +605,14 @@ _STRINGS: dict[str, dict[str, str]] = {
         "bn": "শর্টকাট তৈরি হয়েছে:\n{path}",
         "ur": "شارٹ کٹ بنایا گیا:\n{path}",
     },
+    "ai_provider_missing": {
+        "en": "{provider} isn't set up yet on this computer. Summaries will fail until "
+              "these settings are added to the .env file:\n\n{settings}\n\n{path}\n\n"
+              "Save anyway?",
+        "fr": "{provider} n'est pas encore configuré sur cet ordinateur. Les résumés échoueront "
+              "tant que ces paramètres ne sont pas ajoutés au fichier .env :\n\n{settings}\n\n{path}\n\n"
+              "Enregistrer quand même ?",
+    },
     "audio_check_intro": {
         "en": "TeamScribe will listen for {seconds} seconds.\n\nDuring that time, play a sound "
               "(a video, music…) AND speak into your microphone, so both sources can be checked.",

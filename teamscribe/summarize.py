@@ -4,8 +4,8 @@ Supports four backends, selected via TEAMSCRIBE_LLM_PROVIDER in .env:
 "anthropic" (default, Claude), "openai", "gemini", or "azure_openai".
 Anthropic and OpenAI use native structured-output enforcement so the result
 is always valid JSON matching the schema below — no manual parsing/repair
-needed. Gemini uses response_mime_type + response_schema. Azure OpenAI reuses
-the OpenAI SDK pointed at the user's Azure endpoint.
+needed. Gemini (google-genai SDK) uses response_mime_type + response_json_schema.
+Azure OpenAI reuses the OpenAI SDK pointed at the user's Azure endpoint.
 
 Output JSON shape:
 
@@ -162,18 +162,20 @@ def _client_and_model() -> tuple[str, object, str]:
         client = openai.AzureOpenAI(
             api_key=config.require_env("AZURE_OPENAI_API_KEY"),
             azure_endpoint=config.require_env("AZURE_OPENAI_ENDPOINT"),
-            api_version=config.env("AZURE_OPENAI_API_VERSION", "2024-02-01"),
+            api_version=config.azure_api_version(),
             timeout=_REQUEST_TIMEOUT_S,
         )
         return provider, client, config.env("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
 
     if provider == "gemini":
-        import google.generativeai as genai
-        config.require_env("GEMINI_API_KEY")
-        genai.configure(api_key=config.env("GEMINI_API_KEY"))
-        model_name = config.env("TEAMSCRIBE_GEMINI_MODEL", "gemini-1.5-flash")
-        client = genai.GenerativeModel(model_name)
-        return provider, client, model_name
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(
+            api_key=config.require_env("GEMINI_API_KEY"),
+            http_options=types.HttpOptions(timeout=int(_REASONING_TIMEOUT_S * 1000)),
+        )
+        return provider, client, config.gemini_model()
 
     import anthropic
     config.require_env("ANTHROPIC_API_KEY")
@@ -244,20 +246,40 @@ def _summarize_with_azure_openai(client, model: str, system: str, instruction: s
     return _openai_chat_json(client, model, system, instruction, payload, schema, {"max_tokens": _OUTPUT_TOKENS})
 
 
-def _summarize_with_gemini(client, model: str, system: str, instruction: str, payload: str, schema: dict = _SCHEMA) -> dict:
-    import google.generativeai as genai
+def _gemini_output_tokens(model: str, tokens: int) -> int:
+    # Gemini 2.5+ models think before answering and that thinking counts in
+    # max_output_tokens, so give them the same headroom as OpenAI reasoning models.
+    name = (model or "").lower()
+    return tokens if name.startswith(("gemini-1", "gemini-2.0")) else _REASONING_OUTPUT_TOKENS
 
-    generation_config = genai.GenerationConfig(
-        response_mime_type="application/json",
-        response_schema=schema,
-        max_output_tokens=8000,
-    )
-    prompt = f"{system}\n\n{instruction}\n\n<<<\n{payload}\n>>>"
-    response = client.generate_content(prompt, generation_config=generation_config)
+
+def _gemini_text(response, model: str) -> str:
     text = response.text
-    if not text:
-        raise RuntimeError("Gemini returned no content for the summary.")
-    return json.loads(text)
+    if text:
+        return text
+    finish = str(getattr(response.candidates[0], "finish_reason", "")) if response.candidates else ""
+    if "MAX_TOKENS" in finish:
+        raise RuntimeError(
+            f"{model} ran out of output space before finishing the summary; "
+            "try a larger model or a shorter selection."
+        )
+    raise RuntimeError(f"Gemini returned no content ({finish or 'blocked'}).")
+
+
+def _summarize_with_gemini(client, model: str, system: str, instruction: str, payload: str, schema: dict = _SCHEMA) -> dict:
+    from google.genai import types
+
+    response = client.models.generate_content(
+        model=model,
+        contents=f"{instruction}\n\n<<<\n{payload}\n>>>",
+        config=types.GenerateContentConfig(
+            system_instruction=system,
+            response_mime_type="application/json",
+            response_json_schema=schema,
+            max_output_tokens=_gemini_output_tokens(model, _OUTPUT_TOKENS),
+        ),
+    )
+    return json.loads(_gemini_text(response, model))
 
 
 def _summarize_text(
@@ -270,6 +292,39 @@ def _summarize_text(
     if provider == "gemini":
         return _summarize_with_gemini(client, model, system, instruction, payload, schema)
     return _summarize_with_anthropic(client, model, system, instruction, payload, schema)
+
+
+def complete_text(system: str, user: str, max_tokens: int) -> str:
+    """One short plain-text answer from the configured provider (e.g. a
+    meeting title). Raises on any failure; callers fall back themselves."""
+    provider, client, model = _client_and_model()
+    if provider == "anthropic":
+        response = client.messages.create(
+            model=model, max_tokens=max_tokens, system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        return next((b.text for b in response.content if b.type == "text"), "").strip()
+    if provider == "gemini":
+        from google.genai import types
+
+        response = client.models.generate_content(
+            model=model, contents=user,
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                max_output_tokens=min(_gemini_output_tokens(model, max_tokens), max(max_tokens, 2000)),
+            ),
+        )
+        return (response.text or "").strip()
+    limit = (
+        {"max_tokens": max_tokens} if provider == "azure_openai"
+        else openai_token_limit(model, max_tokens, 2000)
+    )
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+        **limit,
+    )
+    return (response.choices[0].message.content or "").strip()
 
 
 def _chunk_words(text: str, size: int) -> list[str]:

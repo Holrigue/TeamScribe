@@ -5,9 +5,9 @@ timestamp to something browsable in Explorer, e.g.
 ``budget-q3-discussion_16-06-2026_14-30-00.wav`` instead of
 ``20260616_143000/audio.wav``.
 
-Tries a short Claude call for a real title; falls back to a local
-keyword-frequency heuristic (no API needed) if Claude is unavailable —
-e.g. while ANTHROPIC_API_KEY has no credit — so renaming still works.
+Tries a short call to the configured AI provider for a real title; falls
+back to a local keyword-frequency heuristic (no API needed) if it is
+unavailable — e.g. while the API key has no credit — so renaming still works.
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ import unicodedata
 from datetime import datetime
 from pathlib import Path
 
-from . import config
 
 _TIMESTAMP_RE = re.compile(r"^\d{8}_\d{6}$")
 
@@ -68,37 +67,9 @@ def _llm_slug(transcript: str) -> str | None:
     if not snippet.strip():
         return None
     try:
-        if config.llm_provider() == "openai":
-            import openai
+        from .summarize import complete_text
 
-            from .summarize import openai_token_limit
-
-            config.require_env("OPENAI_API_KEY")
-            model = config.openai_model()
-            client = openai.OpenAI(timeout=30.0)
-            response = client.chat.completions.create(
-                model=model,
-                **openai_token_limit(model, 30, 2000),
-                messages=[
-                    {"role": "system", "content": _TITLE_PROMPT},
-                    {"role": "user", "content": snippet},
-                ],
-            )
-            text = response.choices[0].message.content or ""
-            return text.strip() or None
-
-        import anthropic
-
-        config.require_env("ANTHROPIC_API_KEY")
-        client = anthropic.Anthropic(timeout=30.0)
-        response = client.messages.create(
-            model=config.summary_model(),
-            max_tokens=30,
-            system=_TITLE_PROMPT,
-            messages=[{"role": "user", "content": snippet}],
-        )
-        text = next((b.text for b in response.content if b.type == "text"), "")
-        return text.strip() or None
+        return complete_text(_TITLE_PROMPT, snippet, 30) or None
     except Exception:
         return None
 

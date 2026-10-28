@@ -112,6 +112,11 @@ function Get-EnvValue($key) {
     return $null
 }
 
+# True when a .env value is empty or still the dummy shipped in .env.example.
+function Test-EnvMissing($value) {
+    return (-not $value) -or ($value -match "xxxxxxxx") -or ($value -match "<your-")
+}
+
 function Set-EnvValue($key, $value) {
     $lines = @()
     if (Test-Path ".env") { $lines = Get-Content ".env" }
@@ -222,33 +227,35 @@ $providerChoice = Read-Host "[1/2/3/4]"
 $providerCode = "anthropic"
 $providerKeyEnv = "ANTHROPIC_API_KEY"
 $providerKeyUrl = "https://console.anthropic.com/settings/keys"
-$providerKeyPlaceholder = "sk-ant-xxx*"
 
 switch ($providerChoice.Trim()) {
     "2" {
         $providerCode = "openai"
         $providerKeyEnv = "OPENAI_API_KEY"
         $providerKeyUrl = "https://platform.openai.com/api-keys"
-        $providerKeyPlaceholder = "sk-xxx*"
     }
     "3" {
         $providerCode = "azure_openai"
         $providerKeyEnv = "AZURE_OPENAI_API_KEY"
         $providerKeyUrl = "https://portal.azure.com/"
-        $providerKeyPlaceholder = ""
     }
     "4" {
         $providerCode = "gemini"
         $providerKeyEnv = "GEMINI_API_KEY"
         $providerKeyUrl = "https://aistudio.google.com/app/apikey"
-        $providerKeyPlaceholder = ""
     }
 }
 
 Set-EnvValue "TEAMSCRIBE_LLM_PROVIDER" $providerCode
+# The widget's Settings choice overrides .env, so align it with this answer.
+python -c "from teamscribe import config; s = config.load_gui_settings(); s['llm_provider'] = '$providerCode'; config.save_gui_settings(s)"
 
-$existingKey = Get-EnvValue $providerKeyEnv
-$needsKey = -not $existingKey -or ($providerKeyPlaceholder -and $existingKey -like $providerKeyPlaceholder)
+$needsKey = Test-EnvMissing (Get-EnvValue $providerKeyEnv)
+if ($providerCode -eq "azure_openai") {
+    # Older .env files carry 2024-02-01, which lacks structured outputs.
+    Set-EnvValue "AZURE_OPENAI_API_VERSION" "2024-10-21"
+    $needsKey = $needsKey -or (Test-EnvMissing (Get-EnvValue "AZURE_OPENAI_ENDPOINT"))
+}
 
 if ($needsKey) {
     Write-Info ((L ai_get_key) -f $providerKeyUrl)

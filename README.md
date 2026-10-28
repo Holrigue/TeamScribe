@@ -26,7 +26,7 @@ TeamScribe supports **4 AI backends** for summarization. Each user brings their 
 | **Claude** (Anthropic) — default | `anthropic` | `claude-sonnet-4-6` | [console.anthropic.com](https://console.anthropic.com/) |
 | **ChatGPT** (OpenAI) | `openai` | `gpt-4o-mini` | [platform.openai.com](https://platform.openai.com/api-keys) |
 | **Copilot** (Azure OpenAI) | `azure_openai` | your deployment name | [portal.azure.com](https://portal.azure.com/) |
-| **Gemini** (Google) | `gemini` | `gemini-1.5-flash` | [aistudio.google.com](https://aistudio.google.com/app/apikey) |
+| **Gemini** (Google) | `gemini` | `gemini-2.5-flash` | [aistudio.google.com](https://aistudio.google.com/app/apikey) |
 
 ### Required `.env` keys per provider
 
@@ -43,11 +43,11 @@ TEAMSCRIBE_OPENAI_MODEL=gpt-4o-mini          # optional
 AZURE_OPENAI_API_KEY=...
 AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com/
 AZURE_OPENAI_DEPLOYMENT=gpt-4o              # optional, default: gpt-4o
-AZURE_OPENAI_API_VERSION=2024-02-01         # optional
+AZURE_OPENAI_API_VERSION=2024-10-21         # optional, 2024-10-21 or newer
 
 # Gemini
 GEMINI_API_KEY=...
-TEAMSCRIBE_GEMINI_MODEL=gemini-1.5-flash    # optional
+TEAMSCRIBE_GEMINI_MODEL=gemini-2.5-flash    # optional
 ```
 
 > **Your keys stay local.** API keys are read from your `.env` file, which is git-ignored and never transmitted anywhere by TeamScribe. Each user is responsible for their own key and the costs it incurs.
@@ -181,9 +181,11 @@ TEAMSCRIBE_OPENAI_MODEL=gpt-4o-mini   # optional override
 ```
 
 Only the official OpenAI API is supported (no custom base URL), so your key
-is never sent anywhere but `api.openai.com`. Both providers use native
-structured-output enforcement, so the summary JSON shape is guaranteed
-either way.
+is never sent anywhere but `api.openai.com`. All four providers enforce the
+summary JSON schema natively (structured outputs), so its shape is
+guaranteed whichever one you pick. When you pick a provider in Settings,
+TeamScribe warns you if its key (or, for Azure, its endpoint) is still
+missing from `.env`.
 
 ---
 

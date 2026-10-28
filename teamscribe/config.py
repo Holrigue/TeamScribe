@@ -32,12 +32,17 @@ def env(name: str, default: str | None = None) -> str | None:
     return value or default
 
 
+def _is_placeholder(value: str) -> bool:
+    """True for the dummy values shipped in .env.example (sk-xxxx…, <your-resource>…)."""
+    return "xxxxxxxx" in value or "<your-" in value or value.startswith("00000000-")
+
+
 def require_env(name: str) -> str:
     value = env(name)
-    if not value:
+    if not value or _is_placeholder(value):
         raise RuntimeError(
             f"Missing required setting '{name}'. "
-            f"Add it to your .env file (copy .env.example to .env)."
+            f"Add it to your .env file ({ENV_PATH})."
         )
     return value
 
@@ -79,6 +84,42 @@ def llm_provider() -> str:
 
 def openai_model() -> str:
     return env("TEAMSCRIBE_OPENAI_MODEL", "gpt-4o-mini")
+
+
+def gemini_model() -> str:
+    return env("TEAMSCRIBE_GEMINI_MODEL", "gemini-2.5-flash")
+
+
+# Structured outputs (json_schema) arrived in Azure OpenAI API 2024-08-01-preview;
+# 2024-10-21 is the first GA version that has them.
+_AZURE_MIN_API_VERSION = "2024-10-21"
+
+
+def azure_api_version() -> str:
+    """Configured Azure OpenAI API version, raised to the oldest one that
+    supports the structured outputs TeamScribe relies on (older .env files
+    shipped 2024-02-01, which rejects every summary request)."""
+    value = env("AZURE_OPENAI_API_VERSION", _AZURE_MIN_API_VERSION)
+    return value if value[:10] >= "2024-08-01" else _AZURE_MIN_API_VERSION
+
+
+# .env settings each AI provider needs before it can be used.
+PROVIDER_REQUIRED_ENV = {
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "openai": ("OPENAI_API_KEY",),
+    "azure_openai": ("AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT"),
+    "gemini": ("GEMINI_API_KEY",),
+}
+
+
+def missing_provider_settings(provider: str) -> list[str]:
+    """Names of the .env settings ``provider`` still needs (empty = ready)."""
+    missing = []
+    for name in PROVIDER_REQUIRED_ENV.get(provider, ()):
+        value = env(name)
+        if not value or _is_placeholder(value):
+            missing.append(name)
+    return missing
 
 
 # ---- Session directories ---------------------------------------------------

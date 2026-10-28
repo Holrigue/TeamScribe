@@ -952,6 +952,16 @@ class SettingsDialog(QDialog):
             )
             return
 
+        provider = self.provider_combo.currentData()
+        missing = config.missing_provider_settings(provider)
+        if missing and QMessageBox.warning(
+            self, "TeamScribe",
+            tr("ai_provider_missing", self.lang, provider=self.provider_combo.currentText(),
+               settings="\n".join(f"  • {name}" for name in missing), path=config.ENV_PATH),
+            QMessageBox.Save | QMessageBox.Cancel, QMessageBox.Cancel,
+        ) != QMessageBox.Save:
+            return
+
         previous_lang = self.settings.get("language", "en")
         self.settings["auto_summarize"] = self.summarize_box.isChecked()
         self.settings["auto_copy_meeting"] = self.copy_meeting_box.isChecked()
