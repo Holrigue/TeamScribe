@@ -365,22 +365,6 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
 
     # Update status / actions
-    "update_check_unavailable": {
-        "en": "Check unavailable (project not installed via git clone).",
-        "fr": "Vérification indisponible (projet non cloné via git).",
-        "es": "Verificación no disponible (proyecto no instalado mediante git clone).",
-        "pt": "Verificação indisponível (projeto não instalado via git clone).",
-        "de": "Prüfung nicht verfügbar (Projekt nicht via git clone installiert).",
-        "it": "Verifica non disponibile (progetto non installato tramite git clone).",
-        "ru": "Проверка недоступна (проект не установлен через git clone).",
-        "ja": "確認不可（git cloneでインストールされていません）。",
-        "zh": "检查不可用（项目未通过git clone安装）。",
-        "ko": "확인 불가 (프로젝트가 git clone으로 설치되지 않음).",
-        "hi": "जाँच उपलब्ध नहीं (प्रोजेक्ट git clone के माध्यम से इंस्टॉल नहीं)।",
-        "ar": "الفحص غير متاح (المشروع غير مثبَّت عبر git clone).",
-        "bn": "চেক অনুপলব্ধ (প্রকল্পটি git clone-এর মাধ্যমে ইনস্টল করা হয়নি)।",
-        "ur": "چیک دستیاب نہیں (پروجیکٹ git clone کے ذریعے انسٹال نہیں)۔",
-    },
     "update_check_failed": {
         "en": "Check failed: {error}",
         "fr": "Vérification impossible : {error}",
@@ -397,21 +381,14 @@ _STRINGS: dict[str, dict[str, str]] = {
         "bn": "চেক ব্যর্থ: {error}",
         "ur": "چیک ناکام: {error}",
     },
-    "update_available": {
-        "en": "An update is available ({behind} commit(s)).",
-        "fr": "Une mise à jour est disponible ({behind} commit(s)).",
-        "es": "Hay una actualización disponible ({behind} commit(s)).",
-        "pt": "Uma atualização está disponível ({behind} commit(s)).",
-        "de": "Ein Update ist verfügbar ({behind} Commit(s)).",
-        "it": "È disponibile un aggiornamento ({behind} commit).",
-        "ru": "Доступно обновление ({behind} коммит(ов)).",
-        "ja": "アップデートが利用可能です（{behind}コミット）。",
-        "zh": "有可用更新（{behind} 个提交）。",
-        "ko": "업데이트 사용 가능 ({behind}개 커밋).",
-        "hi": "अपडेट उपलब्ध है ({behind} कमिट)।",
-        "ar": "يتوفر تحديث ({behind} إيداع(ات)).",
-        "bn": "একটি আপডেট পাওয়া গেছে ({behind} কমিট)।",
-        "ur": "ایک اپ ڈیٹ دستیاب ہے ({behind} کمٹ)۔",
+    "update_available_version": {
+        "en": "Version {latest} is available (you have {current}).",
+        "fr": "La version {latest} est disponible (vous avez la {current}).",
+    },
+    "update_whats_new": {"en": "See what's new", "fr": "Voir les nouveautés"},
+    "update_banner": {
+        "en": "New version {latest} available - click to update",
+        "fr": "Nouvelle version {latest} disponible - cliquez pour mettre à jour",
     },
     "update_up_to_date": {
         "en": "TeamScribe is up to date.",

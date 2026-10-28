@@ -221,6 +221,11 @@ tasks to Planner — all without opening a terminal.
   locally even if Planner is unreachable.
 - Settings include: theme (dark/light), transparency, language (EN/FR),
   always-on-top, launch at startup, audio check, and one-click updates.
+- **Updates** — TeamScribe checks GitHub for a new official Release at launch
+  and every 6 hours; when one is out, a banner appears at the top of the widget.
+  One click installs it, whether TeamScribe was installed with `git clone` or
+  from the zip on the Releases page (your `.env` keys, sessions and settings
+  are kept).
 
 ### Command line
 
@@ -326,7 +331,7 @@ teamscribe/
     gui.py           # PySide6 desktop widget (teamscribe gui)
     i18n.py          # bilingual strings (EN/FR) for the widget
     shortcuts.py     # Windows startup + desktop shortcut helpers (cached)
-    update.py        # git-based update check and apply
+    update.py        # GitHub Release check; update via git pull or release zip
     cli.py           # Typer entry point
   sessions/          # per-meeting output (git-ignored)
   assets/            # logo (png, svg, ico)

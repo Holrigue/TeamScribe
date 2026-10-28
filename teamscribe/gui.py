@@ -656,6 +656,9 @@ def _friendly_ai_error(exc: Exception, lang: str) -> str:
     return text[:200]
 
 
+_UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000  # every 6 hours
+
+
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -860,6 +863,11 @@ class SettingsDialog(QDialog):
         self.update_status_label = QLabel("…")
         self.update_status_label.setWordWrap(True)
         upd.addWidget(self.update_status_label)
+        self._link_color = pal["text"]
+        self.update_notes_label = QLabel("")
+        self.update_notes_label.setObjectName("muted")
+        self.update_notes_label.setOpenExternalLinks(True)
+        upd.addWidget(self.update_notes_label)
         update_row = QHBoxLayout()
         check_update_btn = QPushButton(tr("check_now", self.lang))
         check_update_btn.clicked.connect(self._check_update_now)
@@ -890,19 +898,23 @@ class SettingsDialog(QDialog):
         outer.addLayout(footer)
 
     def _refresh_update_status(self, info: dict) -> None:
-        if info.get("error") == "not-a-git-checkout":
-            self.update_status_label.setText(tr("update_check_unavailable", self.lang))
-            self.apply_update_btn.setEnabled(False)
-        elif info.get("error"):
+        available = bool(info.get("available"))
+        if info.get("error"):
             self.update_status_label.setText(tr("update_check_failed", self.lang, error=info["error"]))
-            self.apply_update_btn.setEnabled(False)
-        elif info.get("available"):
-            behind = info.get("behind", 0)
-            self.update_status_label.setText(tr("update_available", self.lang, behind=behind))
-            self.apply_update_btn.setEnabled(True)
+        elif available:
+            self.update_status_label.setText(tr(
+                "update_available_version", self.lang,
+                latest=info.get("latest", ""), current=info.get("current", ""),
+            ))
         else:
             self.update_status_label.setText(tr("update_up_to_date", self.lang))
-            self.apply_update_btn.setEnabled(False)
+        self.apply_update_btn.setEnabled(available)
+        self.update_notes_label.setVisible(available)
+        if available:
+            self.update_notes_label.setText(
+                f"<a style='color: {self._link_color};' href='{info.get('url', '')}'>"
+                f"{tr('update_whats_new', self.lang)}</a>"
+            )
 
     def _check_update_now(self) -> None:
         self.update_status_label.setText(tr("update_checking", self.lang))
@@ -910,8 +922,7 @@ class SettingsDialog(QDialog):
         info = update.check_for_update()
         parent = self.parent()
         if parent is not None:
-            parent._update_info = info
-            parent.update_badge.setVisible(bool(info.get("available")))
+            parent._on_update_checked(info)
         self._refresh_update_status(info)
 
     def _apply_update_now(self) -> None:
@@ -926,9 +937,11 @@ class SettingsDialog(QDialog):
         self.update_status_label.setText(tr("update_in_progress", self.lang))
         QApplication.processEvents()
         try:
-            update.apply_update(log=lambda msg: (
-                self.update_status_label.setText(msg), QApplication.processEvents()
-            ))
+            parent = self.parent()
+            update.apply_update(
+                (parent._update_info if parent is not None else None),
+                log=lambda msg: (self.update_status_label.setText(msg), QApplication.processEvents()),
+            )
         except Exception as exc:
             QMessageBox.warning(self, "TeamScribe", tr("update_failed", self.lang, error=exc))
             self._refresh_update_status(update.check_for_update())
@@ -1163,6 +1176,12 @@ class TeamScribeWidget(QWidget):
         self._task_worker: TaskWorker | None = None
         self._update_check_worker: UpdateCheckWorker | None = None
         self._update_info: dict = {"available": False}
+        # The widget usually stays open for days (it starts with Windows), so
+        # look for a new Release periodically, not only at launch.
+        self._update_timer = QTimer(self)
+        self._update_timer.setInterval(_UPDATE_CHECK_INTERVAL_MS)
+        self._update_timer.timeout.connect(self.check_for_update)
+        self._update_timer.start()
         self.settings = config.load_gui_settings()
         self.lang = self.settings.get("language", "en")
 
@@ -1377,6 +1396,14 @@ class TeamScribeWidget(QWidget):
         title_row.addWidget(close_btn)
         layout.addLayout(title_row)
 
+        # New-release banner: hidden until a newer official Release exists.
+        self.update_banner = QPushButton()
+        self.update_banner.setObjectName("primary")
+        self.update_banner.setCursor(Qt.PointingHandCursor)
+        self.update_banner.clicked.connect(self.open_settings)
+        self.update_banner.hide()
+        layout.addWidget(self.update_banner)
+
         # Collapsible content — everything below the title bar is wrapped in
         # a single widget so toggle_minimize() can show/hide it in one call.
         self.content_widget = QWidget()
@@ -1408,7 +1435,9 @@ class TeamScribeWidget(QWidget):
         self.privacy_hint.setObjectName("muted")
         self.privacy_hint.setVisible(False)
         content_layout.addWidget(self.privacy_hint)
-        self.set_keep_audio(privacy_on_default)
+        # Restoring the saved choice at launch: no consent prompt (it was
+        # given when the switch was turned off).
+        self.set_keep_audio(privacy_on_default, ask=False)
 
         # Record button
         self.record_btn = QPushButton(_plain(tr("record_start", self.lang)))
@@ -1591,8 +1620,8 @@ class TeamScribeWidget(QWidget):
         self.settings["pinned"] = pinned
         config.save_gui_settings(self.settings)
 
-    def set_keep_audio(self, privacy_on: bool) -> None:
-        if not privacy_on:
+    def set_keep_audio(self, privacy_on: bool, ask: bool = True) -> None:
+        if not privacy_on and ask:
             # Privacy mode is being turned OFF — show a consent notice and let
             # the user confirm before applying the change.
             confirm = QMessageBox.warning(
@@ -1687,7 +1716,11 @@ class TeamScribeWidget(QWidget):
     def _on_update_checked(self, info: dict) -> None:
         self._update_check_worker = None
         self._update_info = info or {"available": False}
-        self.update_badge.setVisible(bool(self._update_info.get("available")))
+        available = bool(self._update_info.get("available"))
+        self.update_badge.setVisible(available)
+        if available:
+            self.update_banner.setText(tr("update_banner", self.lang, latest=self._update_info.get("latest", "")))
+        self.update_banner.setVisible(available)
 
     # -- sessions list --------------------------------------------------
 
