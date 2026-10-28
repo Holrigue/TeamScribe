@@ -1060,6 +1060,9 @@ class TeamScribeWidget(QWidget):
         return (
             f"#root {{ background: rgba({r}, {g}, {b}, {alpha:.0f}); border: 1px solid {c['border']}; border-radius: 12px; }}"
             f"QDialog#root {{ background: rgb({r}, {g}, {b}); border: none; border-radius: 0; }}"
+            # Message boxes opened from a styled dialog inherit its text colour,
+            # so give them the palette background too (not the Windows default).
+            f"QMessageBox {{ background: rgb({r}, {g}, {b}); }}"
             f"QLabel {{ color: {c['text']}; background: transparent; }}"
             f"QLabel#title {{ font-weight: 600; letter-spacing: 0.3px; }}"
             f"QLabel#muted {{ color: {c['muted']}; font-size: 11px; }}"
