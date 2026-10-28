@@ -140,13 +140,13 @@ def openai_token_limit(model: str, tokens: int, reasoning_tokens: int) -> dict:
     return {"max_completion_tokens": reasoning_tokens if openai_is_reasoning(model) else tokens}
 
 
-def _client_and_model() -> tuple[str, object, str]:
-    """Return (provider, sdk_client, model) for the configured LLM backend.
+def _client_and_model(provider: str | None = None) -> tuple[str, object, str]:
+    """Return (provider, sdk_client, model) for ``provider`` (default: the configured LLM backend).
 
     Each provider's API key is read only from the environment (loaded from
     the local, git-ignored .env) and never logged or persisted elsewhere.
     """
-    provider = config.llm_provider()
+    provider = provider or config.llm_provider()
 
     if provider == "openai":
         import openai
@@ -294,10 +294,10 @@ def _summarize_text(
     return _summarize_with_anthropic(client, model, system, instruction, payload, schema)
 
 
-def complete_text(system: str, user: str, max_tokens: int) -> str:
-    """One short plain-text answer from the configured provider (e.g. a
-    meeting title). Raises on any failure; callers fall back themselves."""
-    provider, client, model = _client_and_model()
+def complete_text(system: str, user: str, max_tokens: int, provider: str | None = None) -> str:
+    """One short plain-text answer from ``provider`` (default: the configured
+    one), e.g. a meeting title. Raises on any failure; callers fall back themselves."""
+    provider, client, model = _client_and_model(provider)
     if provider == "anthropic":
         response = client.messages.create(
             model=model, max_tokens=max_tokens, system=system,
@@ -595,3 +595,20 @@ def assist_sessions(session_paths, request: str, *, log=print) -> dict:
 def assist_session(session_path: Path, request: str, *, log=print) -> dict:
     """Single-meeting shortcut for :func:`assist_sessions`."""
     return assist_sessions([session_path], request, log=log)
+
+
+def test_connection(provider: str, overrides: dict[str, str]) -> None:
+    """Make one tiny real request to ``provider`` with the given .env values
+    (typed in Settings but not saved yet). Raises with the provider's error."""
+    import os
+
+    saved = {name: os.environ.get(name) for name in overrides}
+    os.environ.update({name: value for name, value in overrides.items() if value})
+    try:
+        complete_text("Reply with the single word OK.", "ping", 16, provider=provider)
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value

@@ -606,12 +606,60 @@ _STRINGS: dict[str, dict[str, str]] = {
         "ur": "شارٹ کٹ بنایا گیا:\n{path}",
     },
     "ai_provider_missing": {
-        "en": "{provider} isn't set up yet on this computer. Summaries will fail until "
-              "these settings are added to the .env file:\n\n{settings}\n\n{path}\n\n"
-              "Save anyway?",
-        "fr": "{provider} n'est pas encore configuré sur cet ordinateur. Les résumés échoueront "
-              "tant que ces paramètres ne sont pas ajoutés au fichier .env :\n\n{settings}\n\n{path}\n\n"
-              "Enregistrer quand même ?",
+        "en": "{provider} isn't connected yet on this computer, so summaries will fail. "
+              "Still missing:\n\n{settings}\n\nPaste it in the AI section, then use "
+              "\"Test connection\". Save anyway?",
+        "fr": "{provider} n'est pas encore connecté sur cet ordinateur : les résumés échoueront. "
+              "Il manque encore :\n\n{settings}\n\nCollez-la dans la section IA, puis utilisez "
+              "« Tester la connexion ». Enregistrer quand même ?",
+    },
+    "ai_key_steps": {
+        "en": "1. Create an API key on {link}  2. Paste it below  3. Click Test connection.",
+        "fr": "1. Créez une clé API sur {link}  2. Collez-la ci-dessous  3. Cliquez sur Tester la connexion.",
+    },
+    "ai_key_label": {"en": "API key", "fr": "Clé API"},
+    "ai_endpoint_label": {"en": "Azure endpoint", "fr": "Endpoint Azure"},
+    "ai_deployment_label": {"en": "Deployment name", "fr": "Nom du déploiement"},
+    "ai_key_placeholder": {"en": "Paste your API key here", "fr": "Collez votre clé API ici"},
+    "ai_key_placeholder_hint": {
+        "en": "Paste your API key here (starts with {hint})",
+        "fr": "Collez votre clé API ici (commence par {hint})",
+    },
+    "ai_key_saved": {
+        "en": "Key saved (…{tail}) - paste a new one to replace it",
+        "fr": "Clé enregistrée (…{tail}) - collez-en une nouvelle pour la remplacer",
+    },
+    "ai_test_btn": {"en": "Test connection", "fr": "Tester la connexion"},
+    "ai_testing": {"en": "Testing…", "fr": "Test en cours…"},
+    "ai_test_ok": {"en": "✓ Connected: {provider} answers.", "fr": "✓ Connecté : {provider} répond."},
+    "ai_test_fail": {"en": "✗ {error}", "fr": "✗ {error}"},
+    "ai_status_ready": {"en": "Key saved. Test it anytime.", "fr": "Clé enregistrée. Testez-la quand vous voulez."},
+    "ai_status_missing": {"en": "Not connected yet.", "fr": "Pas encore connecté."},
+    "ai_key_privacy": {
+        "en": "Your key stays on this computer (local .env file): it is never shared or sent to GitHub, "
+              "only to the AI provider you picked.",
+        "fr": "Votre clé reste sur cet ordinateur (fichier .env local) : elle n'est jamais partagée ni "
+              "envoyée sur GitHub, seulement au fournisseur IA choisi.",
+    },
+    "ai_err_missing": {
+        "en": "Paste the API key (and, for Azure, the endpoint) first.",
+        "fr": "Collez d'abord la clé API (et, pour Azure, l'endpoint).",
+    },
+    "ai_err_auth": {
+        "en": "Key refused: check that it was copied in full and is still active.",
+        "fr": "Clé refusée : vérifiez qu'elle est copiée en entier et toujours active.",
+    },
+    "ai_err_quota": {
+        "en": "No credit or quota left on this account: add credit on the provider's site.",
+        "fr": "Plus de crédit ou quota atteint sur ce compte : ajoutez du crédit sur le site du fournisseur.",
+    },
+    "ai_err_model": {
+        "en": "Model or deployment not found: check its name.",
+        "fr": "Modèle ou déploiement introuvable : vérifiez son nom.",
+    },
+    "ai_err_network": {
+        "en": "Can't reach the provider: check the internet connection (or the Azure endpoint).",
+        "fr": "Impossible de joindre le fournisseur : vérifiez la connexion internet (ou l'endpoint Azure).",
     },
     "audio_check_intro": {
         "en": "TeamScribe will listen for {seconds} seconds.\n\nDuring that time, play a sound "

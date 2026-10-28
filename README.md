@@ -19,7 +19,15 @@ meetings — available as a **desktop widget** (GUI) or a **command-line tool**.
 
 ## 🤖 Choose your AI
 
-TeamScribe supports **4 AI backends** for summarization. Each user brings their own API key — no key is ever shared or bundled with the app. You can switch provider at any time directly from the **Settings** dropdown in the widget, without editing any file.
+TeamScribe supports **4 AI backends** for summarization. Each user brings their own API key — no key is ever shared or bundled with the app.
+
+**Connect your AI in 3 steps, without editing any file:** open **Settings** (gear icon) → **AI and language**, pick your provider, then:
+
+1. click the link shown to create an API key on the provider's site;
+2. paste the key in the **API key** field (for Copilot, also the Azure endpoint and deployment name);
+3. click **Test connection** — you get ✓ Connected, or a plain-language reason (key refused, no credit left, model not found, no internet), then **Save**.
+
+The key is stored only in the local, git-ignored `.env` file. You can switch provider at any time the same way.
 
 | Provider | `TEAMSCRIBE_LLM_PROVIDER=` | Default model | Get a key |
 |---|---|---|---|

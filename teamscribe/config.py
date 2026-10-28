@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -20,6 +22,11 @@ SESSIONS_DIR = ROOT / "sessions"
 ENV_PATH = ROOT / ".env"
 TOKEN_CACHE_PATH = ROOT / "token_cache.bin"
 GUI_SETTINGS_PATH = ROOT / "gui_settings.json"
+LOG_PATH = ROOT / "teamscribe.log"
+
+# The widget runs under pythonw.exe (no console); without this flag every
+# helper process it starts (PowerShell, git, pip) pops up a console window.
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 # Load .env once, on import. override=False so real env vars win.
 load_dotenv(ENV_PATH, override=False)

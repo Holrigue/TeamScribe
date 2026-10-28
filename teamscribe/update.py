@@ -20,6 +20,7 @@ def _git(*args: str) -> str:
         capture_output=True,
         text=True,
         check=True,
+        creationflags=config.NO_WINDOW,
     )
     return result.stdout.strip()
 
@@ -80,9 +81,14 @@ def apply_update(*, log=print) -> None:
     log(f"Récupération des changements ({branch})…")
     _git("pull", "origin", branch)
     log("Réinstallation des dépendances…")
-    subprocess.run(
+    result = subprocess.run(
         [sys.executable, "-m", "pip", "install", "--user", "-e", "."],
         cwd=str(config.ROOT),
-        check=True,
+        capture_output=True,
+        text=True,
+        creationflags=config.NO_WINDOW,
     )
+    if result.returncode != 0:
+        # No console to read it in: surface pip's own error message instead.
+        raise RuntimeError((result.stderr or result.stdout).strip()[-800:] or "pip install failed")
     log("Mise à jour terminée.")

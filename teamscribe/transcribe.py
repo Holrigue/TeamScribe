@@ -95,9 +95,18 @@ def _cuda_runtime_usable() -> bool:
     """
     import ctypes
 
+    import ctranslate2
+
     _register_nvidia_dll_dirs()
 
-    for dll in ("cudart64_12.dll", "cublas64_12.dll", "cublasLt64_12.dll"):
+    # cuDNN is loaded lazily on the first Whisper encoder pass; when it's
+    # missing ctranslate2 aborts the whole process with no Python exception
+    # (the widget just vanishes), so it must be probed here too.
+    # ctranslate2 >= 4.5 is built against cuDNN 9, older releases cuDNN 8.
+    major, minor = (int(x) for x in ctranslate2.__version__.split(".")[:2])
+    cudnn = "cudnn_ops64_9.dll" if (major, minor) >= (4, 5) else "cudnn_ops_infer64_8.dll"
+
+    for dll in ("cudart64_12.dll", "cublas64_12.dll", "cublasLt64_12.dll", cudnn):
         try:
             ctypes.WinDLL(dll)
         except OSError:

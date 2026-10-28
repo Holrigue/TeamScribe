@@ -616,6 +616,46 @@ def _search_snippet(folded: str, original: str, word: str, width: int = 70) -> s
 # Settings dialog
 # --------------------------------------------------------------------------
 
+# What the Settings connection panel needs per AI provider: the .env name of
+# its key, where users create one, and what a key looks like.
+_AI_PROVIDERS = {
+    "anthropic": {
+        "label": "Claude (Anthropic)", "key_env": "ANTHROPIC_API_KEY",
+        "key_url": "https://console.anthropic.com/settings/keys", "key_hint": "sk-ant-…",
+    },
+    "openai": {
+        "label": "ChatGPT (OpenAI)", "key_env": "OPENAI_API_KEY",
+        "key_url": "https://platform.openai.com/api-keys", "key_hint": "sk-…",
+    },
+    "azure_openai": {
+        "label": "Copilot (Azure OpenAI)", "key_env": "AZURE_OPENAI_API_KEY",
+        "key_url": "https://portal.azure.com/", "key_hint": "",
+    },
+    "gemini": {
+        "label": "Gemini (Google)", "key_env": "GEMINI_API_KEY",
+        "key_url": "https://aistudio.google.com/app/apikey", "key_hint": "AIza…",
+    },
+}
+
+
+def _friendly_ai_error(exc: Exception, lang: str) -> str:
+    """Turn a provider SDK error into one short, actionable sentence."""
+    text = str(exc)
+    low = text.lower()
+    if "missing required setting" in low:
+        return tr("ai_err_missing", lang)
+    if any(k in low for k in ("401", "403", "invalid api key", "incorrect api key", "api key not valid",
+                               "authentication", "permission_denied", "unauthorized")):
+        return tr("ai_err_auth", lang)
+    if any(k in low for k in ("insufficient_quota", "credit balance", "quota", "billing", "429")):
+        return tr("ai_err_quota", lang)
+    if any(k in low for k in ("404", "not_found", "model_not_found", "does not exist", "deploymentnotfound")):
+        return tr("ai_err_model", lang)
+    if any(k in low for k in ("connection", "timed out", "timeout", "getaddrinfo", "name resolution")):
+        return tr("ai_err_network", lang)
+    return text[:200]
+
+
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -715,20 +755,51 @@ class SettingsDialog(QDialog):
         # IA et langue
         ai = section("section_ai")
         self.provider_combo = QComboBox()
-        _PROVIDERS = [
-            ("anthropic",   "Claude (Anthropic)"),
-            ("openai",      "ChatGPT (OpenAI)"),
-            ("azure_openai","Copilot (Azure OpenAI)"),
-            ("gemini",      "Gemini (Google)"),
-        ]
-        for code, label in _PROVIDERS:
-            self.provider_combo.addItem(label, code)
+        for code, info in _AI_PROVIDERS.items():
+            self.provider_combo.addItem(info["label"], code)
         current_provider = self.settings.get("llm_provider") or config.llm_provider()
-        provider_idx = next(
-            (i for i, (code, _) in enumerate(_PROVIDERS) if code == current_provider), 0
-        )
-        self.provider_combo.setCurrentIndex(provider_idx)
-        field(ai, "ai_provider_label", self.provider_combo, ("ai_provider_note",))
+        codes = list(_AI_PROVIDERS)
+        self.provider_combo.setCurrentIndex(codes.index(current_provider) if current_provider in codes else 0)
+        field(ai, "ai_provider_label", self.provider_combo)
+
+        # Connection panel: where to get a key, paste it, test it — no .env editing.
+        self.ai_steps = QLabel()
+        self.ai_steps.setObjectName("muted")
+        self.ai_steps.setWordWrap(True)
+        self.ai_steps.setOpenExternalLinks(True)
+        ai.addWidget(self.ai_steps)
+        self.ai_inputs: dict[str, QLineEdit] = {}
+        self.ai_input_labels: dict[str, QLabel] = {}
+        for name, label_key in (
+            ("key", "ai_key_label"),
+            ("AZURE_OPENAI_ENDPOINT", "ai_endpoint_label"),
+            ("AZURE_OPENAI_DEPLOYMENT", "ai_deployment_label"),
+        ):
+            label = QLabel(tr(label_key, self.lang))
+            edit = QLineEdit()
+            edit.setClearButtonEnabled(True)
+            edit.textChanged.connect(self._remember_ai_input)
+            ai.addWidget(label)
+            ai.addWidget(edit)
+            self.ai_input_labels[name], self.ai_inputs[name] = label, edit
+        self.ai_inputs["key"].setEchoMode(QLineEdit.Password)
+        test_row = QHBoxLayout()
+        self.ai_test_btn = QPushButton(tr("ai_test_btn", self.lang))
+        self.ai_test_btn.clicked.connect(self._test_ai_connection)
+        self.ai_test_result = QLabel("")
+        self.ai_test_result.setWordWrap(True)
+        test_row.addWidget(self.ai_test_btn, 0, Qt.AlignTop)
+        test_row.addWidget(self.ai_test_result, 1)
+        ai.addLayout(test_row)
+        privacy = QLabel(tr("ai_key_privacy", self.lang))
+        privacy.setObjectName("muted")
+        privacy.setWordWrap(True)
+        ai.addWidget(privacy)
+        # Values typed per provider, kept while switching providers; saved on Save.
+        self._ai_typed: dict[str, dict[str, str]] = {code: {} for code in _AI_PROVIDERS}
+        self._ai_filling = False
+        self.provider_combo.currentIndexChanged.connect(self._show_ai_provider)
+        self._show_ai_provider()
         divider(ai)
         self.lang_combo = QComboBox()
         _LANGUAGES = [
@@ -884,6 +955,84 @@ class SettingsDialog(QDialog):
             return
         QMessageBox.information(self, "TeamScribe", tr("shortcut_created", self.lang, path=path))
 
+    # -- AI connection panel ----------------------------------------------
+
+    def _show_ai_provider(self) -> None:
+        """Refill the connection panel for the provider picked in the combo."""
+        code = self.provider_combo.currentData()
+        info = _AI_PROVIDERS[code]
+        typed = self._ai_typed[code]
+        link_color = palette(self.settings.get("theme", "dark"))["text"]
+        domain = info["key_url"].split("/")[2]
+        self.ai_steps.setText(tr(
+            "ai_key_steps", self.lang,
+            link=f"<a style='color: {link_color};' href='{info['key_url']}'>{domain}</a>",
+        ))
+        self._ai_filling = True
+        is_azure = code == "azure_openai"
+        for name in ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_DEPLOYMENT"):
+            self.ai_input_labels[name].setVisible(is_azure)
+            self.ai_inputs[name].setVisible(is_azure)
+            self.ai_inputs[name].setText(typed.get(name, config.env(name, "") or "") if is_azure else "")
+        self.ai_inputs["AZURE_OPENAI_ENDPOINT"].setPlaceholderText("https://<resource>.openai.azure.com/")
+        self.ai_inputs["AZURE_OPENAI_DEPLOYMENT"].setPlaceholderText("gpt-4o")
+        key_edit = self.ai_inputs["key"]
+        key_edit.setText(typed.get("key", ""))
+        if info["key_env"] not in config.missing_provider_settings(code):
+            saved = config.env(info["key_env"], "") or ""
+            key_edit.setPlaceholderText(tr("ai_key_saved", self.lang, tail=saved[-4:]))
+        elif info["key_hint"]:
+            key_edit.setPlaceholderText(tr("ai_key_placeholder_hint", self.lang, hint=info["key_hint"]))
+        else:
+            key_edit.setPlaceholderText(tr("ai_key_placeholder", self.lang))
+        self._ai_filling = False
+        self.ai_test_result.setText(
+            tr("ai_status_ready", self.lang) if not config.missing_provider_settings(code)
+            else tr("ai_status_missing", self.lang)
+        )
+
+    def _remember_ai_input(self) -> None:
+        if self._ai_filling:
+            return
+        typed = self._ai_typed[self.provider_combo.currentData()]
+        for name, edit in self.ai_inputs.items():
+            if edit.isVisible() or name == "key":
+                typed[name] = edit.text().strip()
+
+    def _ai_env_values(self, code: str) -> dict[str, str]:
+        """.env values typed for ``code`` (only non-empty ones; empty = keep saved)."""
+        typed = self._ai_typed[code]
+        values = {_AI_PROVIDERS[code]["key_env"]: typed.get("key", "")}
+        if code == "azure_openai":
+            values["AZURE_OPENAI_ENDPOINT"] = typed.get("AZURE_OPENAI_ENDPOINT", "")
+            values["AZURE_OPENAI_DEPLOYMENT"] = typed.get("AZURE_OPENAI_DEPLOYMENT", "")
+        return {name: value for name, value in values.items() if value}
+
+    def _test_ai_connection(self) -> None:
+        from . import summarize
+
+        code = self.provider_combo.currentData()
+        values = self._ai_env_values(code)
+        label = _AI_PROVIDERS[code]["label"]
+        lang = self.lang
+        self.ai_test_btn.setEnabled(False)
+        self.ai_test_result.setText(tr("ai_testing", lang))
+
+        def work() -> str:
+            summarize.test_connection(code, values)
+            return tr("ai_test_ok", lang, provider=label)
+
+        def show(text: str) -> None:
+            self.ai_test_btn.setEnabled(True)
+            self.ai_test_result.setText(text)
+
+        self._ai_test_worker = TaskWorker(work)
+        self._ai_test_worker.finished_ok.connect(show)
+        self._ai_test_worker.failed.connect(
+            lambda err: show(tr("ai_test_fail", lang, error=_friendly_ai_error(Exception(err), lang)))
+        )
+        self._ai_test_worker.start()
+
     _PROBE_SECONDS = 6
 
     def _run_selftest(self) -> None:
@@ -934,13 +1083,14 @@ class SettingsDialog(QDialog):
         self._probe_worker.start()
 
     def done(self, result: int) -> None:
-        # accept()/reject() both end here: let a running audio check finish so
+        # accept()/reject() both end here: let a running audio/AI check finish so
         # its QThread isn't destroyed mid-run when the dialog goes away.
-        worker = getattr(self, "_probe_worker", None)
-        if worker is not None and worker.isRunning():
-            worker.finished_ok.disconnect()
-            worker.failed.disconnect()
-            worker.wait()
+        for attr in ("_probe_worker", "_ai_test_worker"):
+            worker = getattr(self, attr, None)
+            if worker is not None and worker.isRunning():
+                worker.finished_ok.disconnect()
+                worker.failed.disconnect()
+                worker.wait()
         super().done(result)
 
     def accept(self) -> None:
@@ -953,6 +1103,11 @@ class SettingsDialog(QDialog):
             return
 
         provider = self.provider_combo.currentData()
+        # Keys typed in the connection panel go to the local .env (never the
+        # registry or GitHub); set_env_value also applies them right away.
+        for code in _AI_PROVIDERS:
+            for name, value in self._ai_env_values(code).items():
+                config.set_env_value(name, value)
         missing = config.missing_provider_settings(provider)
         if missing and QMessageBox.warning(
             self, "TeamScribe",
@@ -1496,7 +1651,7 @@ class TeamScribeWidget(QWidget):
         python = Path(sys.executable)
         pythonw = python.with_name("pythonw.exe")
         exe = str(pythonw) if pythonw.is_file() else str(python)
-        subprocess.Popen([exe, "-m", "teamscribe.cli", "gui"], cwd=str(config.ROOT))
+        subprocess.Popen([exe, "-m", "teamscribe.cli", "gui"], cwd=str(config.ROOT), creationflags=config.NO_WINDOW)
         QApplication.quit()
 
     # -- updates --------------------------------------------------
@@ -2016,7 +2171,29 @@ class TeamScribeWidget(QWidget):
         self._run_task(fn, busy_text, tr("tasks_pushed", self.lang))
 
 
+def _log_to_file() -> None:
+    """Under pythonw.exe stdout/stderr are None: anything printed (a library
+    progress bar, a traceback) is lost or raises, and a native crash leaves
+    no trace. Send them to teamscribe.log, with faulthandler for hard crashes."""
+    if sys.stderr is not None and sys.stdout is not None:
+        return
+    import faulthandler
+    from datetime import datetime
+
+    try:
+        if config.LOG_PATH.is_file() and config.LOG_PATH.stat().st_size > 1_000_000:
+            config.LOG_PATH.replace(config.LOG_PATH.with_suffix(".log.old"))
+        log = open(config.LOG_PATH, "a", encoding="utf-8", buffering=1)
+    except OSError:
+        return
+    log.write(f"\n=== TeamScribe started {datetime.now():%Y-%m-%d %H:%M:%S} ===\n")
+    sys.stdout = sys.stdout or log
+    sys.stderr = sys.stderr or log
+    faulthandler.enable(log)
+
+
 def main() -> None:
+    _log_to_file()
     app = QApplication.instance() or QApplication([])
     widget = TeamScribeWidget()
     widget.show()

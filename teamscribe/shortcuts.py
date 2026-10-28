@@ -38,7 +38,7 @@ def _known_folder(name: str) -> Path:
         result = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command",
              f"[Environment]::GetFolderPath('{name}')"],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, creationflags=config.NO_WINDOW,
         )
         _folder_cache[name] = Path(result.stdout.strip())
     return _folder_cache[name]
@@ -70,6 +70,7 @@ def _write_shortcut(shortcut_path: Path) -> None:
         check=True,
         capture_output=True,
         text=True,
+        creationflags=config.NO_WINDOW,
     )
 
 

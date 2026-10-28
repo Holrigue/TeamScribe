@@ -15,6 +15,9 @@ sessions/*
 # Local-only GUI prefs (per-machine, not secret but not shared config)
 gui_settings.json
 
+# Widget log (errors and crash traces; local only)
+teamscribe.log
+
 # --- Python ---
 __pycache__/
 *.py[cod]
