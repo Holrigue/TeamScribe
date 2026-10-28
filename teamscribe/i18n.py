@@ -605,21 +605,33 @@ _STRINGS: dict[str, dict[str, str]] = {
         "bn": "শর্টকাট তৈরি হয়েছে:\n{path}",
         "ur": "شارٹ کٹ بنایا گیا:\n{path}",
     },
-    "audio_check_result": {
-        "en": "Speakers: {speakers}\nMicrophone: {mic}\nLoopback devices detected: {count}",
-        "fr": "Haut-parleurs : {speakers}\nMicro : {mic}\nPériphériques loopback détectés : {count}",
-        "es": "Altavoces: {speakers}\nMicófono: {mic}\nDispositivos loopback detectados: {count}",
-        "pt": "Alto-falantes: {speakers}\nMicrofone: {mic}\nDispositivos loopback detectados: {count}",
-        "de": "Lautsprecher: {speakers}\nMikrofon: {mic}\nLoopback-Geräte erkannt: {count}",
-        "it": "Altoparlanti: {speakers}\nMicrofono: {mic}\nDispositivi loopback rilevati: {count}",
-        "ru": "Динамики: {speakers}\nМикрофон: {mic}\nОбнаружено устройств loopback: {count}",
-        "ja": "スピーカー：{speakers}\nマイク：{mic}\nループバックデバイス検出：{count}",
-        "zh": "扬声器：{speakers}\n麦克风：{mic}\n检测到的环回设备：{count}",
-        "ko": "스피커: {speakers}\n마이크: {mic}\n루프백 장치 감지: {count}",
-        "hi": "स्पीकर: {speakers}\nमाइक्रोफ़ोन: {mic}\nलूपबैक डिवाइस: {count}",
-        "ar": "مكبرات الصوت: {speakers}\nالميكروفون: {mic}\nأجهزة الاسترجاع المكتشفة: {count}",
-        "bn": "স্পিকার: {speakers}\nমাইক্রোফোন: {mic}\nলুপব্যাক ডিভাইস পাওয়া গেছে: {count}",
-        "ur": "اسپیکر: {speakers}\nمائیکروفون: {mic}\nلوپ بیک ڈیوائسز: {count}",
+    "audio_check_intro": {
+        "en": "TeamScribe will listen for {seconds} seconds.\n\nDuring that time, play a sound "
+              "(a video, music…) AND speak into your microphone, so both sources can be checked.",
+        "fr": "TeamScribe va écouter pendant {seconds} secondes.\n\nPendant ce temps, faites jouer un son "
+              "(une vidéo, de la musique…) ET parlez dans votre micro, pour vérifier les deux sources.",
+    },
+    "audio_check_running": {
+        "en": "Listening… ({seconds} s)",
+        "fr": "Écoute en cours… ({seconds} s)",
+    },
+    "audio_check_levels": {
+        "en": "Meeting sound (speakers): {speakers}\n  → {speakers_verdict}\n\n"
+              "Your voice (microphone): {mic}\n  → {mic_verdict}",
+        "fr": "Son de la réunion (haut-parleurs) : {speakers}\n  → {speakers_verdict}\n\n"
+              "Votre voix (micro) : {mic}\n  → {mic_verdict}",
+    },
+    "audio_level_ok": {
+        "en": "OK, sound captured",
+        "fr": "OK, son capté",
+    },
+    "audio_level_quiet": {
+        "en": "Very quiet: raise the volume or check the device",
+        "fr": "Très faible : montez le volume ou vérifiez le périphérique",
+    },
+    "audio_level_silent": {
+        "en": "Nothing captured: check that this is the right device and that it isn't muted",
+        "fr": "Rien de capté : vérifiez que c'est le bon périphérique et qu'il n'est pas en sourdine",
     },
     "audio_title": {
         "en": "Audio",

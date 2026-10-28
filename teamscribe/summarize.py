@@ -117,6 +117,27 @@ _FINAL_INSTR = (
 # Network calls get an explicit timeout so a stalled provider can't hang
 # the recording pipeline indefinitely.
 _REQUEST_TIMEOUT_S = 120.0
+# OpenAI reasoning models think before answering, so a long transcript
+# needs more time and a larger token budget (reasoning tokens count in it).
+_REASONING_TIMEOUT_S = 300.0
+_OUTPUT_TOKENS = 8000
+_REASONING_OUTPUT_TOKENS = 32000
+
+
+def openai_is_reasoning(model: str) -> bool:
+    """True for OpenAI reasoning models (o1/o3/o4, gpt-5…), which reject
+    ``max_tokens`` and spend part of the output budget on hidden reasoning."""
+    name = (model or "").lower()
+    return name.startswith(("o1", "o3", "o4", "gpt-5")) and "chat" not in name
+
+
+def openai_token_limit(model: str, tokens: int, reasoning_tokens: int) -> dict:
+    """Output-length argument for chat.completions on the official OpenAI API.
+
+    ``max_completion_tokens`` works on every current model; reasoning models
+    get a larger budget so their hidden reasoning can't starve the answer.
+    """
+    return {"max_completion_tokens": reasoning_tokens if openai_is_reasoning(model) else tokens}
 
 
 def _client_and_model() -> tuple[str, object, str]:
@@ -130,8 +151,10 @@ def _client_and_model() -> tuple[str, object, str]:
     if provider == "openai":
         import openai
         config.require_env("OPENAI_API_KEY")
-        client = openai.OpenAI(timeout=_REQUEST_TIMEOUT_S)
-        return provider, client, config.openai_model()
+        model = config.openai_model()
+        timeout = _REASONING_TIMEOUT_S if openai_is_reasoning(model) else _REQUEST_TIMEOUT_S
+        client = openai.OpenAI(timeout=timeout)
+        return provider, client, model
 
     if provider == "azure_openai":
         import openai
@@ -182,10 +205,9 @@ def _summarize_with_anthropic(client, model: str, system: str, instruction: str,
     return _extract_json_anthropic(response)
 
 
-def _summarize_with_openai(client, model: str, system: str, instruction: str, payload: str, schema: dict = _SCHEMA) -> dict:
+def _openai_chat_json(client, model: str, system: str, instruction: str, payload: str, schema: dict, limit: dict) -> dict:
     response = client.chat.completions.create(
         model=model,
-        max_tokens=8000,
         response_format={
             "type": "json_schema",
             "json_schema": {"name": "meeting_summary", "schema": schema, "strict": True},
@@ -194,15 +216,32 @@ def _summarize_with_openai(client, model: str, system: str, instruction: str, pa
             {"role": "system", "content": system},
             {"role": "user", "content": f"{instruction}\n\n<<<\n{payload}\n>>>"},
         ],
+        **limit,
     )
-    text = response.choices[0].message.content
-    if text is None:
+    choice = response.choices[0]
+    refusal = getattr(choice.message, "refusal", None)
+    if refusal:
+        raise RuntimeError(f"OpenAI declined the request: {refusal}")
+    if choice.finish_reason == "length":
+        raise RuntimeError(
+            f"{model} ran out of output space before finishing the summary; "
+            "try a larger model or a shorter selection."
+        )
+    text = choice.message.content
+    if not text:
         raise RuntimeError("OpenAI returned no content for the summary.")
     return json.loads(text)
 
 
-# Azure OpenAI uses the same SDK and wire format as OpenAI.
-_summarize_with_azure_openai = _summarize_with_openai
+def _summarize_with_openai(client, model: str, system: str, instruction: str, payload: str, schema: dict = _SCHEMA) -> dict:
+    limit = openai_token_limit(model, _OUTPUT_TOKENS, _REASONING_OUTPUT_TOKENS)
+    return _openai_chat_json(client, model, system, instruction, payload, schema, limit)
+
+
+def _summarize_with_azure_openai(client, model: str, system: str, instruction: str, payload: str, schema: dict = _SCHEMA) -> dict:
+    # Same SDK and wire format; the default Azure api_version predates
+    # max_completion_tokens, so Azure keeps max_tokens.
+    return _openai_chat_json(client, model, system, instruction, payload, schema, {"max_tokens": _OUTPUT_TOKENS})
 
 
 def _summarize_with_gemini(client, model: str, system: str, instruction: str, payload: str, schema: dict = _SCHEMA) -> dict:

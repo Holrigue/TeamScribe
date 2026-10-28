@@ -778,10 +778,10 @@ class SettingsDialog(QDialog):
         tools_row = QHBoxLayout()
         desktop_btn = QPushButton(tr("create_desktop_shortcut", self.lang))
         desktop_btn.clicked.connect(self._create_desktop_shortcut)
-        devices_btn = QPushButton(tr("check_audio", self.lang))
-        devices_btn.clicked.connect(self._run_selftest)
+        self.devices_btn = QPushButton(tr("check_audio", self.lang))
+        self.devices_btn.clicked.connect(self._run_selftest)
         tools_row.addWidget(desktop_btn)
-        tools_row.addWidget(devices_btn)
+        tools_row.addWidget(self.devices_btn)
         tools.addLayout(tools_row)
 
         # Mises à jour
@@ -884,21 +884,64 @@ class SettingsDialog(QDialog):
             return
         QMessageBox.information(self, "TeamScribe", tr("shortcut_created", self.lang, path=path))
 
+    _PROBE_SECONDS = 6
+
     def _run_selftest(self) -> None:
+        """Record speakers and mic separately for a few seconds and report
+        whether each one actually carries sound (not just its device name)."""
         from . import capture
 
-        try:
-            info = capture.list_devices()
-        except RuntimeError as exc:
-            QMessageBox.warning(self, "TeamScribe", str(exc))
+        seconds = self._PROBE_SECONDS
+        if QMessageBox.information(
+            self, tr("audio_title", self.lang),
+            tr("audio_check_intro", self.lang, seconds=seconds),
+            QMessageBox.Ok | QMessageBox.Cancel, QMessageBox.Ok,
+        ) != QMessageBox.Ok:
             return
-        msg = tr(
-            "audio_check_result", self.lang,
-            speakers=info["default_speakers"]["name"],
-            mic=info["default_mic"]["name"],
-            count=len(info["loopback_devices"]),
+
+        lang = self.lang
+
+        def verdict(rms: float) -> str:
+            # Same thresholds as `teamscribe selftest`.
+            if rms >= 0.01:
+                return tr("audio_level_ok", lang)
+            if rms > 0.0005:
+                return tr("audio_level_quiet", lang)
+            return tr("audio_level_silent", lang)
+
+        def work() -> str:
+            result = capture.probe(seconds)
+            loop, mic = result["loopback"], result["microphone"]
+            return tr(
+                "audio_check_levels", lang,
+                speakers=loop["name"], speakers_verdict=verdict(loop["rms"]),
+                mic=mic["name"], mic_verdict=verdict(mic["rms"]),
+            )
+
+        def restore_button() -> None:
+            self.devices_btn.setEnabled(True)
+            self.devices_btn.setText(tr("check_audio", lang))
+
+        self.devices_btn.setEnabled(False)
+        self.devices_btn.setText(tr("audio_check_running", lang, seconds=seconds))
+        self._probe_worker = TaskWorker(work)
+        self._probe_worker.finished_ok.connect(
+            lambda msg: (restore_button(), QMessageBox.information(self, tr("audio_title", lang), msg))
         )
-        QMessageBox.information(self, tr("audio_title", self.lang), msg)
+        self._probe_worker.failed.connect(
+            lambda err: (restore_button(), QMessageBox.warning(self, "TeamScribe", err))
+        )
+        self._probe_worker.start()
+
+    def done(self, result: int) -> None:
+        # accept()/reject() both end here: let a running audio check finish so
+        # its QThread isn't destroyed mid-run when the dialog goes away.
+        worker = getattr(self, "_probe_worker", None)
+        if worker is not None and worker.isRunning():
+            worker.finished_ok.disconnect()
+            worker.failed.disconnect()
+            worker.wait()
+        super().done(result)
 
     def accept(self) -> None:
         try:

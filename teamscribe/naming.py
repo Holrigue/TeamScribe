@@ -71,11 +71,14 @@ def _llm_slug(transcript: str) -> str | None:
         if config.llm_provider() == "openai":
             import openai
 
+            from .summarize import openai_token_limit
+
             config.require_env("OPENAI_API_KEY")
+            model = config.openai_model()
             client = openai.OpenAI(timeout=30.0)
             response = client.chat.completions.create(
-                model=config.openai_model(),
-                max_tokens=30,
+                model=model,
+                **openai_token_limit(model, 30, 2000),
                 messages=[
                     {"role": "system", "content": _TITLE_PROMPT},
                     {"role": "user", "content": snippet},

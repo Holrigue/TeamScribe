@@ -49,6 +49,13 @@ class _StreamRecorder:
         self._thread.start()
 
     def _loop(self) -> None:
+        # A WASAPI loopback stream delivers nothing while nothing is playing,
+        # so buffered frames alone would drop every silence and drift ahead
+        # of the mic. Pad those gaps from the wall clock to keep both tracks
+        # on the same timeline.
+        bytes_per_frame = self.channels * self.sample_width
+        written = 0
+        started = time.monotonic()
         while self._running:
             try:
                 data = self.stream.read(_CHUNK, exception_on_overflow=False)
@@ -56,7 +63,13 @@ class _StreamRecorder:
                 # An overflow or transient device hiccup: keep going rather
                 # than killing the whole recording.
                 continue
+            got = len(data) // bytes_per_frame
+            missing = int((time.monotonic() - started) * self.rate) - written - got
+            if missing > 2 * _CHUNK:
+                self._frames.append(b"\x00" * (missing * bytes_per_frame))
+                written += missing
             self._frames.append(data)
+            written += got
 
     def stop(self) -> None:
         self._running = False
