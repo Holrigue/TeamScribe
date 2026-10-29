@@ -140,7 +140,76 @@ def openai_token_limit(model: str, tokens: int, reasoning_tokens: int) -> dict:
     return {"max_completion_tokens": reasoning_tokens if openai_is_reasoning(model) else tokens}
 
 
+class AIError(RuntimeError):
+    """A provider request could not be completed.
+
+    ``category`` is one of: missing | quota | ratelimit | auth | model |
+    network | other. ``str()`` is a readable English sentence followed by a
+    machine tag ``[ai:<category>]`` so the GUI can localize it while the CLI
+    still reads sensibly. Raised only when a real request (or key/client
+    setup) failed — never for ordinary flow.
+    """
+
+    _SENTENCE = {
+        "missing": "No AI API key is set — add one in Settings.",
+        "quota": "The AI account has no credit or quota left, so the summary "
+                 "could not be generated — add credit (or switch provider/key in Settings).",
+        "ratelimit": "The AI provider is rate-limiting requests right now — wait a moment and try again.",
+        "auth": "The AI API key was refused — check that it was copied in full and is still active.",
+        "model": "The AI model or deployment was not found — check its name in Settings.",
+        "network": "Could not reach the AI provider — check the internet connection.",
+        "other": "",
+    }
+
+    def __init__(self, category: str, detail: str):
+        self.category = category
+        self.detail = detail
+        sentence = self._SENTENCE.get(category) or detail
+        super().__init__(f"{sentence} [ai:{category}]")
+
+
+def _classify_ai_exc(exc: Exception) -> str:
+    """Map a provider SDK / setup exception to an AIError category.
+
+    Order matters: an OpenAI "insufficient_quota" is reported as HTTP 429, so
+    the quota check must come before the generic rate-limit check.
+    """
+    low = str(exc).lower()
+    if "missing required setting" in low:
+        return "missing"
+    if any(k in low for k in ("insufficient_quota", "credit balance", "billing",
+                              "exceeded your current quota", "out of credit")):
+        return "quota"
+    if "429" in low or "rate limit" in low or "rate_limit" in low or "overloaded" in low:
+        return "ratelimit"
+    if any(k in low for k in ("401", "403", "invalid api key", "incorrect api key", "api key not valid",
+                              "invalid_api_key", "authentication", "permission_denied", "unauthorized")):
+        return "auth"
+    if any(k in low for k in ("404", "not_found", "model_not_found", "does not exist", "deploymentnotfound")):
+        return "model"
+    if any(k in low for k in ("connection", "timed out", "timeout", "getaddrinfo",
+                              "name resolution", "temporarily unavailable")):
+        return "network"
+    return "other"
+
+
+def _ai_guard(fn, *args, **kwargs):
+    """Run ``fn`` and convert any provider failure into a classified AIError."""
+    try:
+        return fn(*args, **kwargs)
+    except AIError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - deliberately broad: any SDK/setup failure
+        raise AIError(_classify_ai_exc(exc), str(exc)[:300]) from exc
+
+
 def _client_and_model(provider: str | None = None) -> tuple[str, object, str]:
+    """Public wrapper: raises a classified :class:`AIError` on any setup failure
+    (missing key, bad client init, …)."""
+    return _ai_guard(_client_and_model_impl, provider)
+
+
+def _client_and_model_impl(provider: str | None = None) -> tuple[str, object, str]:
     """Return (provider, sdk_client, model) for ``provider`` (default: the configured LLM backend).
 
     Each provider's API key is read only from the environment (loaded from
@@ -285,6 +354,13 @@ def _summarize_with_gemini(client, model: str, system: str, instruction: str, pa
 def _summarize_text(
     provider: str, client, model: str, system: str, instruction: str, payload: str, schema: dict = _SCHEMA
 ) -> dict:
+    """Dispatch one summary request, converting provider failures to AIError."""
+    return _ai_guard(_summarize_dispatch, provider, client, model, system, instruction, payload, schema)
+
+
+def _summarize_dispatch(
+    provider: str, client, model: str, system: str, instruction: str, payload: str, schema: dict = _SCHEMA
+) -> dict:
     if provider == "openai":
         return _summarize_with_openai(client, model, system, instruction, payload, schema)
     if provider == "azure_openai":
@@ -296,8 +372,13 @@ def _summarize_text(
 
 def complete_text(system: str, user: str, max_tokens: int, provider: str | None = None) -> str:
     """One short plain-text answer from ``provider`` (default: the configured
-    one), e.g. a meeting title. Raises on any failure; callers fall back themselves."""
+    one), e.g. a meeting title. Raises a classified :class:`AIError` on any
+    failure; callers fall back themselves."""
     provider, client, model = _client_and_model(provider)
+    return _ai_guard(_complete_dispatch, provider, client, model, system, user, max_tokens)
+
+
+def _complete_dispatch(provider: str, client, model: str, system: str, user: str, max_tokens: int) -> str:
     if provider == "anthropic":
         response = client.messages.create(
             model=model, max_tokens=max_tokens, system=system,

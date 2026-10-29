@@ -627,8 +627,20 @@ _STRINGS: dict[str, dict[str, str]] = {
         "fr": "Clé refusée : vérifiez qu'elle est copiée en entier et toujours active.",
     },
     "ai_err_quota": {
-        "en": "No credit or quota left on this account: add credit on the provider's site.",
-        "fr": "Plus de crédit ou quota atteint sur ce compte : ajoutez du crédit sur le site du fournisseur.",
+        "en": "The AI account has no credit or quota left, so the summary could not be generated. "
+              "Add credit on the provider's site, or switch provider/key in Settings.",
+        "fr": "Le compte IA n'a plus de crédit ou de quota, le résumé n'a donc pas pu être généré. "
+              "Ajoutez du crédit sur le site du fournisseur, ou changez de fournisseur/clé dans les Réglages.",
+    },
+    "ai_err_ratelimit": {
+        "en": "The AI provider is rate-limiting requests right now. Wait a moment and try again.",
+        "fr": "Le fournisseur IA limite les requêtes en ce moment. Patientez un instant puis réessayez.",
+    },
+    "ai_test_quota_ok": {
+        "en": "✓ Key accepted — it will be saved. The account just has no credit left, "
+              "so summaries can't be generated until you add some.",
+        "fr": "✓ Clé acceptée — elle sera enregistrée. Le compte n'a simplement plus de crédit : "
+              "les résumés ne pourront être générés qu'une fois du crédit ajouté.",
     },
     "ai_err_model": {
         "en": "Model or deployment not found: check its name.",
