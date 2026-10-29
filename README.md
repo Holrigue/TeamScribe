@@ -97,6 +97,12 @@ By using TeamScribe, you acknowledge and agree that:
 
 ---
 
+## What's new in v2.3.4
+
+- **Fixed: closing Settings (or toggling Privacy mode) no longer closes the whole app** — the main window is a floating tool window, and Qt was treating the Settings dialog / privacy notice as the app's last window, quitting on its close. The app now stays open; only closing the main window (or an app restart) exits it.
+- **Your AI key is always saved, even at $0 credit** — testing a key whose account has no credit now clearly says the key is accepted and will be saved; it is no longer mistaken for a rejected key.
+- **Clearer processing errors** — when a summary can't be generated because the AI account is out of credit (or the key was refused, the provider is rate-limiting, the model is wrong, or the network is down), the message says exactly that and what to do, instead of a raw error. Capture, transcription and Planner errors keep their own details.
+
 ## What's new in v2.3.1
 
 - **Ask the AI about several meetings at once** — select meetings with Ctrl/Shift-click: get a synthesis or an answer across them (shown in a window with a Copy button), update several summaries in one request (each previous summary is kept), or copy them all for the Dashboard as one `teamscribe.meetings/1` bundle (imported one after the other). CLI: `teamscribe ask "<request>" <session> <session>…`.

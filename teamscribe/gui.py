@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -638,9 +639,44 @@ _AI_PROVIDERS = {
 }
 
 
+# summarize.AIError stamps its messages with a "[ai:<category>]" tag so the GUI
+# can map a failure that crossed the worker/signal boundary (as a plain string)
+# back to a localized, actionable sentence.
+_AI_MARKER = re.compile(r"\s*\[ai:(\w+)\]\s*$")
+_AI_CATEGORY_KEY = {
+    "missing": "ai_err_missing",
+    "quota": "ai_err_quota",
+    "ratelimit": "ai_err_ratelimit",
+    "auth": "ai_err_auth",
+    "model": "ai_err_model",
+    "network": "ai_err_network",
+}
+
+
+def _ai_error_category(message: str) -> str | None:
+    m = _AI_MARKER.search(message or "")
+    return m.group(1) if m else None
+
+
+def _humanize_error(message: str, lang: str) -> str:
+    """Localize a tagged AI error; leave any other error message untouched.
+
+    Non-AI failures (audio capture, transcription, Microsoft Graph/Planner, …)
+    carry no tag and are returned verbatim, so they keep their own details.
+    """
+    cat = _ai_error_category(message)
+    if cat is None:
+        return message
+    key = _AI_CATEGORY_KEY.get(cat)
+    return tr(key, lang) if key else _AI_MARKER.sub("", message).strip()
+
+
 def _friendly_ai_error(exc: Exception, lang: str) -> str:
     """Turn a provider SDK error into one short, actionable sentence."""
     text = str(exc)
+    # Already classified by summarize.AIError? Use its category directly.
+    if _ai_error_category(text):
+        return _humanize_error(text, lang)
     low = text.lower()
     if "missing required setting" in low:
         return tr("ai_err_missing", lang)
@@ -1039,11 +1075,21 @@ class SettingsDialog(QDialog):
             self.ai_test_btn.setEnabled(True)
             self.ai_test_result.setText(text)
 
+        def on_fail(err: str) -> None:
+            self.ai_test_btn.setEnabled(True)
+            if _ai_error_category(err) == "quota":
+                # The request DID authenticate (the key is valid) — it was only
+                # declined for billing. Reassure the user: the key is fine and
+                # will be saved; the account just has no credit.
+                self.ai_test_result.setText(tr("ai_test_quota_ok", lang))
+            else:
+                self.ai_test_result.setText(
+                    tr("ai_test_fail", lang, error=_friendly_ai_error(Exception(err), lang))
+                )
+
         self._ai_test_worker = TaskWorker(work)
         self._ai_test_worker.finished_ok.connect(show)
-        self._ai_test_worker.failed.connect(
-            lambda err: show(tr("ai_test_fail", lang, error=_friendly_ai_error(Exception(err), lang)))
-        )
+        self._ai_test_worker.failed.connect(on_fail)
         self._ai_test_worker.start()
 
     _PROBE_SECONDS = 6
@@ -1230,6 +1276,10 @@ class TeamScribeWidget(QWidget):
     def closeEvent(self, event) -> None:
         self._save_position()
         super().closeEvent(event)
+        # quitOnLastWindowClosed is disabled (see main()), so closing the main
+        # window must quit the app explicitly — otherwise the process would
+        # keep running headless after the window is gone.
+        QApplication.quit()
 
     # -- chrome / dragging --------------------------------------------------
 
@@ -2116,7 +2166,10 @@ class TeamScribeWidget(QWidget):
             self._background_workers.remove(worker)
         if self._record_worker is None:
             self.status_label.setText(tr("error", self.lang))
-        QMessageBox.warning(self, "TeamScribe", tr("record_failed", self.lang, error=message))
+        QMessageBox.warning(
+            self, "TeamScribe",
+            tr("record_failed", self.lang, error=_humanize_error(message, self.lang)),
+        )
 
     # -- summarize / push-tasks --------------------------------------------------
 
@@ -2139,7 +2192,7 @@ class TeamScribeWidget(QWidget):
     def _on_task_failed(self, message: str) -> None:
         self._task_worker = None
         self.status_label.setText(tr("error", self.lang))
-        QMessageBox.warning(self, "TeamScribe", message)
+        QMessageBox.warning(self, "TeamScribe", _humanize_error(message, self.lang))
 
     def run_summarize(self) -> None:
         session = self._selected_session()
@@ -2228,6 +2281,12 @@ def _log_to_file() -> None:
 def main() -> None:
     _log_to_file()
     app = QApplication.instance() or QApplication([])
+    # The main window is a Qt.Tool, which by default does NOT carry
+    # WA_QuitOnClose. With the default quitOnLastWindowClosed=True, closing any
+    # QDialog/QMessageBox (Settings, the privacy-mode notice, …) would then be
+    # treated as "the last quit-anchoring window closed" and quit the whole app.
+    # Disable that and quit explicitly from the main window's closeEvent instead.
+    app.setQuitOnLastWindowClosed(False)
     widget = TeamScribeWidget()
     widget.show()
     app.exec()
