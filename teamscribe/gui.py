@@ -79,10 +79,14 @@ class RecordWorker(QThread):
     finished_ok = Signal(Path)
     failed = Signal(str)
 
-    def __init__(self, do_summarize: bool, keep_audio: bool = True):
+    def __init__(self, do_summarize: bool, keep_audio: bool = True, resume_session: Path | None = None):
         super().__init__()
         self.do_summarize = do_summarize
         self.keep_audio = keep_audio
+        # When set, skip capture entirely and re-run the post-recording
+        # pipeline on this already-recorded session (finish an interrupted
+        # meeting). The signal wiring is identical to a normal recording.
+        self.resume_session = Path(resume_session) if resume_session else None
         self.stop_event = threading.Event()
         self._shown_info = False
 
@@ -91,6 +95,22 @@ class RecordWorker(QThread):
 
     def run(self) -> None:
         from . import capture, naming, summarize as summarize_mod, transcribe
+
+        if self.resume_session is not None:
+            from . import resume as resume_mod
+
+            try:
+                session = resume_mod.reprocess_session(
+                    self.resume_session,
+                    do_summarize=self.do_summarize,
+                    keep_audio=self.keep_audio,
+                    log=lambda *_: None,
+                    on_phase=self.phase.emit,
+                )
+                self.finished_ok.emit(session)
+            except Exception as exc:
+                self.failed.emit(str(exc))
+            return
 
         try:
             session = config.new_session_dir()
@@ -107,6 +127,7 @@ class RecordWorker(QThread):
                 config.max_minutes(),
                 on_tick=on_tick,
                 stop_event=self.stop_event,
+                keep_audio=self.keep_audio,
             )
 
             # Best-effort quick title from a short audio snippet, bounded to
@@ -482,6 +503,7 @@ class TaskWorker(QThread):
 TITLE_ROLE = Qt.UserRole + 1
 DATE_ROLE = Qt.UserRole + 2
 DONE_ROLE = Qt.UserRole + 3
+INCOMPLETE_ROLE = Qt.UserRole + 4
 
 _MONTHS = {
     "fr": ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."],
@@ -535,7 +557,13 @@ class _SessionDelegate(QStyledItemDelegate):
             return
 
         center = QPointF(rect.left() + 13, rect.top() + 14)
-        if index.data(DONE_ROLE):
+        if index.data(INCOMPLETE_ROLE):
+            # Recording whose processing was interrupted: a red ring draws the
+            # eye, signalling it needs finishing (right-click → Finish).
+            painter.setPen(QPen(QColor(pal["red"]), 1.6))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawEllipse(center, 3.2, 3.2)
+        elif index.data(DONE_ROLE):
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(pal["muted"]))
             painter.drawEllipse(center, 3, 3)
@@ -1219,6 +1247,10 @@ class TeamScribeWidget(QWidget):
         # transcribing/summarizing in the background — kept referenced so a
         # new recording can start immediately without waiting on them.
         self._background_workers: list[RecordWorker] = []
+        # Paths of sessions currently being reprocessed (interrupted meetings
+        # being finished), so the list doesn't re-flag them as interrupted and
+        # the menu doesn't start a second reprocess of the same one.
+        self._reprocessing: set[str] = set()
         self._task_worker: TaskWorker | None = None
         self._update_check_worker: UpdateCheckWorker | None = None
         self._update_info: dict = {"available": False}
@@ -1240,6 +1272,9 @@ class TeamScribeWidget(QWidget):
         self.check_for_update()
         self._prefetch_shortcuts()
         self._prefetch_whisper()
+        # Deferred so the window paints first, then prompt about any privacy-mode
+        # recording whose capture was interrupted (recover vs. purge raw audio).
+        QTimer.singleShot(800, self._recover_interrupted_captures)
         if self.settings.get("minimized", False):
             self._set_minimized(True, save=False)
 
@@ -1813,13 +1848,28 @@ class TeamScribeWidget(QWidget):
             # summary.json keeps a fixed name regardless of the contextual
             # rename in naming.finalize_session, so it's a stable signal.
             has_summary = (path / "summary.json").is_file()
+            # A session with audio but no transcript was interrupted before
+            # its processing finished — flag it so the list shows it and the
+            # context menu offers to finish it. Skip the check while it is
+            # actively being reprocessed (its transcript isn't written yet).
+            from . import resume as resume_mod
+
+            interrupted = (
+                not has_summary
+                and str(path) not in self._reprocessing
+                and resume_mod.is_incomplete(path)
+            )
             title = export.title_from_name(path)
             item = QListWidgetItem(title)
             item.setData(Qt.UserRole, str(path))
             item.setData(TITLE_ROLE, title)
             item.setData(DATE_ROLE, _format_when(when, self.lang))
             item.setData(DONE_ROLE, has_summary)
-            status = tr("session_ready" if has_summary else "session_processing", self.lang)
+            item.setData(INCOMPLETE_ROLE, interrupted)
+            if interrupted:
+                status = tr("session_interrupted", self.lang)
+            else:
+                status = tr("session_ready" if has_summary else "session_processing", self.lang)
             item.setToolTip(f"{tooltip}\n{status}")
             self.session_list.addItem(item)
             if str(path) in selected:
@@ -1972,6 +2022,16 @@ class TeamScribeWidget(QWidget):
 
         title = export.title_from_name(path) if not many else tr("assist_target_many", self.lang, count=len(selected)).split(": ", 1)[-1]
         header(QFontMetrics(menu.font()).elidedText(title, Qt.ElideRight, 220))
+        from . import resume as resume_mod
+
+        if not many and str(path) not in self._reprocessing and resume_mod.is_incomplete(path):
+            # Interrupted recording: the primary action is to finish it.
+            menu.addAction(
+                ic("refresh", pal["red"]),
+                tr("reprocess_action", self.lang),
+                lambda: self.reprocess_session_ui(path),
+            )
+            menu.addSeparator()
         if not many:
             menu.addAction(ic("folder"), tr("open_folder_action", self.lang), lambda: os.startfile(str(path)))
             audio_files = list(path.glob("*.wav"))
@@ -2134,8 +2194,96 @@ class TeamScribeWidget(QWidget):
             return
         self.status_label.setToolTip(f"mic: {mic_name}\nspeakers: {speaker_name}")
 
+    def reprocess_session_ui(self, path: Path) -> None:
+        """Finish an interrupted session in the background: re-run the
+        transcribe -> summarize -> rename pipeline on its saved audio, reusing
+        the same worker and signal wiring as a recording."""
+        key = str(path)
+        if key in self._reprocessing:
+            return
+        from . import capture, resume as resume_mod
+
+        if not resume_mod.find_session_audio(path) and not capture.has_recoverable_parts(path):
+            return
+        worker = RecordWorker(
+            do_summarize=self.settings.get("auto_summarize", True),
+            keep_audio=self.settings.get("keep_audio", True),
+            resume_session=path,
+        )
+        worker._resume_origin = key
+        worker.phase.connect(self._on_phase)
+        worker.finished_ok.connect(self._on_record_done)
+        worker.failed.connect(self._on_record_failed)
+        self._reprocessing.add(key)
+        self._background_workers.append(worker)
+        worker.start()
+        self.status_label.setText(tr("reprocess_started", self.lang, name=path.name))
+        self.refresh_sessions()
+
+    def _recover_interrupted_captures(self) -> None:
+        """At launch, handle recordings whose *capture* was interrupted.
+
+        A privacy-mode recording leaves raw audio on disk only if the app was
+        interrupted mid-capture. Honoring the user's intent, prompt once per such
+        session to recover it (the audio is then deleted as privacy mode
+        requires) or purge it now. Non-privacy interrupted captures are left to
+        the passive list flag + right-click "finish". Also prunes manifests whose
+        staged parts are gone (e.g. a session synced from another machine), so
+        dangling pointers don't linger.
+        """
+        from . import capture, resume as resume_mod
+
+        if not config.SESSIONS_DIR.is_dir():
+            return
+        changed = False
+        for path in sorted(config.SESSIONS_DIR.glob("*")):
+            if not path.is_dir() or resume_mod.has_transcript(path):
+                continue
+            if not capture.has_recoverable_parts(path):
+                if capture.prune_stale_manifest(path):
+                    changed = True
+                continue
+            if capture.capture_keep_audio(path) is not False:
+                continue  # audio-kept captures: leave to the passive list flag
+            name = export.title_from_name(path)
+            box = QMessageBox(self)
+            box.setWindowTitle(tr("recover_privacy_title", self.lang))
+            box.setText(tr("recover_privacy_body", self.lang, name=name))
+            box.setIcon(QMessageBox.Warning)
+            recover_btn = box.addButton(
+                tr("recover_privacy_recover", self.lang), QMessageBox.AcceptRole
+            )
+            discard_btn = box.addButton(
+                tr("recover_privacy_discard", self.lang), QMessageBox.DestructiveRole
+            )
+            box.addButton(tr("recover_privacy_later", self.lang), QMessageBox.RejectRole)
+            box.setDefaultButton(recover_btn)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked is recover_btn:
+                self.reprocess_session_ui(path)
+            elif clicked is discard_btn:
+                capture.discard_capture(path)
+                # Nothing useful was ever produced for this session — remove the
+                # empty leftover folder too.
+                try:
+                    if not resume_mod.has_transcript(path) and not (path / "summary.json").is_file():
+                        shutil.rmtree(path)
+                except OSError:
+                    pass
+                changed = True
+            # "Later": leave the session untouched; it'll be offered again next launch.
+        if changed:
+            self.refresh_sessions()
+
+    def _clear_reprocessing(self, worker) -> None:
+        origin = getattr(worker, "_resume_origin", None)
+        if origin is not None:
+            self._reprocessing.discard(origin)
+
     def _on_record_done(self, session: Path) -> None:
         worker = self.sender()
+        self._clear_reprocessing(worker)
         if worker in self._background_workers:
             self._background_workers.remove(worker)
         if self._record_worker is None:
@@ -2158,6 +2306,7 @@ class TeamScribeWidget(QWidget):
 
     def _on_record_failed(self, message: str) -> None:
         worker = self.sender()
+        self._clear_reprocessing(worker)
         if worker is self._record_worker:
             # Failed before the transcribing-phase handoff (e.g. capture
             # error), so nothing else has unblocked the button yet.
@@ -2166,6 +2315,9 @@ class TeamScribeWidget(QWidget):
             self._background_workers.remove(worker)
         if self._record_worker is None:
             self.status_label.setText(tr("error", self.lang))
+        # A failed reprocess leaves the session interrupted — refresh so its
+        # marker and the "Finish processing" action come back.
+        self.refresh_sessions()
         QMessageBox.warning(
             self, "TeamScribe",
             tr("record_failed", self.lang, error=_humanize_error(message, self.lang)),

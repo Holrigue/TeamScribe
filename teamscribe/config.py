@@ -10,6 +10,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -30,6 +31,37 @@ NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 # Load .env once, on import. override=False so real env vars win.
 load_dotenv(ENV_PATH, override=False)
+
+
+def staging_dir() -> Path:
+    """Machine-local scratch directory for in-progress raw audio.
+
+    While a meeting is being recorded, the raw per-stream PCM parts are written
+    here — deliberately **outside** the project/``sessions`` folder — so that:
+
+      * they never sync to a cloud-synced project folder (e.g. OneDrive): only
+        the final (and, in privacy mode, short-lived) ``audio.wav`` ever lands
+        in the session folder, and
+      * privacy mode's promise — no raw audio left behind — is easy to honor,
+        since all leftovers live under one local, per-user directory.
+
+    Resolved per-OS to a local, non-roaming cache location and created on
+    demand. Override with the ``TEAMSCRIBE_STAGING_DIR`` env var (used by tests
+    and power users). Portable: works wherever the repo is checked out.
+    """
+    override = env("TEAMSCRIBE_STAGING_DIR")
+    if override:
+        base = Path(override)
+    elif sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()) / "TeamScribe"
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Caches" / "TeamScribe"
+    else:
+        xdg = os.environ.get("XDG_CACHE_HOME")
+        base = (Path(xdg) if xdg else Path.home() / ".cache") / "TeamScribe"
+    d = base / "capture"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def env(name: str, default: str | None = None) -> str | None:

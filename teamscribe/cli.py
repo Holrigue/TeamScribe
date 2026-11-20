@@ -1,6 +1,7 @@
 """TeamScribe command-line interface.
 
     teamscribe record                 capture -> transcribe -> summarize
+    teamscribe reprocess [SESSION]    finish an interrupted session from its audio
     teamscribe summarize [SESSION]    (re)summarize a session's transcript
     teamscribe setup                  choose the target Planner plan + bucket
     teamscribe push-tasks [SESSION]   create Planner tasks from the summary
@@ -164,6 +165,40 @@ def transcribe_cmd(
     path = _resolve_session(session)
     result = transcribe.transcribe(path / "audio.wav", path, log=console.print)
     naming.finalize_session(path, result["text"], log=console.print)
+
+
+@app.command()
+def reprocess(
+    session: str = typer.Argument(None, help="Session id (default: latest)."),
+    summarize: bool = typer.Option(
+        True, help="Also summarize once the transcript is produced."
+    ),
+    keep_audio: bool = typer.Option(
+        True, help="Keep audio.wav after transcription (set --no-keep-audio to delete it)."
+    ),
+):
+    """Finish an interrupted session from its saved audio.
+
+    Re-runs transcribe -> summarize -> rename on a session that was left with
+    only its audio (e.g. the app closed or crashed mid-transcription). Safe to
+    run on a session that already has a transcript: it simply redoes it.
+    """
+    from . import capture, resume
+
+    path = _resolve_session(session)
+    if not resume.find_session_audio(path) and not capture.has_recoverable_parts(path):
+        console.print(
+            f"[red]No audio (*.wav) in {path.name}[/red] — nothing to reprocess."
+        )
+        raise typer.Exit(1)
+    if resume.has_transcript(path):
+        console.print(
+            f"[yellow]{path.name} already has a transcript[/yellow] — redoing it."
+        )
+    final = resume.reprocess_session(
+        path, do_summarize=summarize, keep_audio=keep_audio, log=console.print
+    )
+    console.print(f"[bold green]Done.[/bold green] Session id: {final.name}")
 
 
 @app.command()

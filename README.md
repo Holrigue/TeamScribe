@@ -97,6 +97,15 @@ By using TeamScribe, you acknowledge and agree that:
 
 ---
 
+## What's new in v2.3.6
+
+- **Long meetings no longer crash (and nothing is lost if they do).** Recording used to buffer the whole meeting's audio in memory and only write the file at the end, so a long session (~45 min+) could exhaust memory and crash — losing the entire recording — right when you stopped. Audio is now **streamed to disk as it's captured** and mixed in small blocks on stop, so memory stays flat no matter how long you record. If anything interrupts a recording, the captured audio is kept and the meeting can be **recovered** (the interrupted session offers *Finish processing*, now also when the recording itself — not just its transcription — was cut short).
+- **Privacy mode now keeps raw audio off synced folders.** While recording, the raw audio is written to a machine-local staging directory (e.g. `%LOCALAPPDATA%` on Windows) instead of the session folder, so it never syncs to a cloud-mirrored project folder; in privacy mode only the final, immediately-deleted transcript-ready file ever touches the session folder. If a privacy-mode recording is interrupted, TeamScribe asks at next launch whether to **recover** it (then deletes the audio as usual) or **delete the raw audio** now — so nothing lingers against your intent.
+
+## What's new in v2.3.5
+
+- **Finish an interrupted meeting** — if TeamScribe is closed or crashes between the end of a recording and the summary (for example a rare native transcription fault), the session is left with only its audio and no transcript. It now stands out in the list with a **red ring**, and right-clicking it offers **Finish processing (transcript + summary)**, which re-runs transcription → summary → rename on the saved audio — nothing recorded is lost, and no re-recording is needed. CLI: `teamscribe reprocess [session]`.
+
 ## What's new in v2.3.4
 
 - **Fixed: closing Settings (or toggling Privacy mode) no longer closes the whole app** — the main window is a floating tool window, and Qt was treating the Settings dialog / privacy notice as the app's last window, quitting on its close. The app now stays open; only closing the main window (or an app restart) exits it.
@@ -246,6 +255,10 @@ teamscribe record
 # 2. (Re)summarize a session transcript if needed.
 teamscribe summarize 20260616_134500      # or omit id to use the latest
 
+# 2b. Finish a session interrupted mid-processing (transcribe + summarize + rename
+#     from its saved audio). Omit the id to use the latest.
+teamscribe reprocess 20260616_134500
+
 # 3a. One-time: choose the Planner plan + bucket to target.
 teamscribe setup
 
@@ -333,6 +346,7 @@ teamscribe/
     transcribe.py    # faster-whisper (fr, VAD, GPU/CPU autodetect, model cache)
     summarize.py     # Anthropic/OpenAI API -> structured JSON + markdown
     naming.py        # contextual session folder rename from transcript
+    resume.py        # finish an interrupted session from its saved audio
     planner.py       # MSAL device-code auth + Microsoft Graph
     gui.py           # PySide6 desktop widget (teamscribe gui)
     i18n.py          # bilingual strings (EN/FR) for the widget

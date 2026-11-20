@@ -1556,6 +1556,14 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "Redo the summary",
         "fr": "Refaire le résumé",
     },
+    "reprocess_action": {
+        "en": "Finish processing (transcript + summary)",
+        "fr": "Terminer le traitement (transcript + résumé)",
+    },
+    "reprocess_started": {
+        "en": "Resuming {name}…",
+        "fr": "Reprise de {name}…",
+    },
     "push_planner_action": {
         "en": "Push tasks to Planner",
         "fr": "Pousser les tâches vers Planner",
@@ -1591,6 +1599,41 @@ _STRINGS: dict[str, dict[str, str]] = {
     "session_processing": {
         "en": "No summary yet (processing or not summarized)",
         "fr": "Pas encore de compte rendu (traitement en cours ou non résumé)",
+    },
+    "session_interrupted": {
+        "en": "Processing interrupted — right-click to finish it",
+        "fr": "Traitement interrompu — clic droit pour le terminer",
+    },
+    "recover_privacy_title": {
+        "en": "Private recording interrupted",
+        "fr": "Enregistrement en mode privé interrompu",
+    },
+    "recover_privacy_body": {
+        "en": (
+            "A meeting recorded in privacy mode (« {name} ») was interrupted "
+            "before it finished. Its raw audio is still on this computer.\n\n"
+            "Recover it to produce the transcript (the audio is then deleted, "
+            "as privacy mode requires), or delete the raw audio now?"
+        ),
+        "fr": (
+            "Une rencontre enregistrée en mode privé (« {name} ») a été "
+            "interrompue avant la fin. Son audio brut est encore sur cet "
+            "ordinateur.\n\nLe récupérer pour produire la transcription "
+            "(l’audio est ensuite supprimé, comme l’exige le mode privé), ou "
+            "supprimer l’audio brut maintenant ?"
+        ),
+    },
+    "recover_privacy_recover": {
+        "en": "Recover",
+        "fr": "Récupérer",
+    },
+    "recover_privacy_discard": {
+        "en": "Delete audio",
+        "fr": "Supprimer l’audio",
+    },
+    "recover_privacy_later": {
+        "en": "Later",
+        "fr": "Plus tard",
     },
     "assist_no_session": {
         "en": "No meeting yet.",

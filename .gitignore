@@ -18,6 +18,9 @@ gui_settings.json
 # Widget log (errors and crash traces; local only)
 teamscribe.log
 
+# Internal cross-agent handoff notes (local coordination, not for the repo)
+HANDOFF.md
+
 # --- Python ---
 __pycache__/
 *.py[cod]
